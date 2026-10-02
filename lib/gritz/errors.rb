@@ -6,14 +6,16 @@ module Gritz
   class Error < StandardError
     attr_reader :details, :metadata
 
-    def initialize(message = nil, details: [], metadata: {})
+    def initialize(message = nil, details: [], metadata: {}, remote: false)
       super(message || code.to_s.tr("_", " "))
       @details = details
       @metadata = metadata
+      @remote = remote
     end
 
     def code = self.class::CODE
     def grpc_code = self.class::GRPC_CODE
+    def remote? = @remote
 
     CODE = :unknown
     GRPC_CODE = 2

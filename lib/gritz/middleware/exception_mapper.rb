@@ -7,16 +7,19 @@ module Gritz
     # Converts application exceptions to safe RPC errors.
     # @api public
     class ExceptionMapper
-      def initialize(app, mappings: {}, expose_errors: false)
+      def initialize(app, mappings: {}, expose_errors: false, passthrough_remote_errors: false)
         @app = app
         @mappings = mappings
         @expose_errors = expose_errors
+        @passthrough_remote_errors = passthrough_remote_errors
       end
 
       def call(context)
         @app.call(context)
-      rescue Gritz::Error
-        raise
+      rescue Gritz::Error => e
+        raise unless e.remote? && !@passthrough_remote_errors
+
+        raise_internal(context, e)
       rescue StandardError => e
         mapping = @mappings.find { |klass, _| e.is_a?(klass) }&.last
         if mapping
@@ -30,9 +33,15 @@ module Gritz
           raise Errors::InvalidArgument, "invalid record"
         end
 
+        raise_internal(context, e)
+      end
+
+      private
+
+      def raise_internal(context, error)
         error_id = SecureRandom.uuid
-        context.store[:gritz_error] = { error_id: error_id, error: e.class.name, message: e.message, backtrace: e.backtrace }
-        raise Errors::Internal.new(@expose_errors ? e.message : "internal error (#{error_id})", metadata: { "error-id" => error_id })
+        context.store[:gritz_error] = { error_id: error_id, error: error.class.name, message: error.message, backtrace: error.backtrace }
+        raise Errors::Internal.new(@expose_errors ? error.message : "internal error (#{error_id})", metadata: { "error-id" => error_id })
       end
     end
   end

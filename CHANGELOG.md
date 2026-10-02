@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Define lazy, fork-safe clients with process-local shared connections, per-call middleware, deadline propagation and selected request headers.
+- Treat unhandled downstream errors as safe `INTERNAL` responses by default; allow explicit status passthrough.
+- Support optional worker telemetry integrations with the remaining graceful shutdown budget.
+
 ## 0.3.0
 
 - Replace workers one at a time with `USR1` and recycle them by request count, memory or lifetime.

@@ -12,6 +12,8 @@ Controller tests can load `gritz/testing/rspec` or `gritz/testing/minitest` and 
 
 Supervised servers support phased replacement, fresh-interpreter hot reexec, request/memory/lifetime recycling, Admin HTTP probes and process-wide Prometheus totals. The CLI keeps one lifecycle owner across master generations; application controllers and gRPC resources stay in serving processes.
 
+`Gritz::Client.define` creates lazy, fork-safe client constants with deadline propagation, selected request headers and middleware around complete streams. See the [client guide](docs/guides/clients.md). Optional [gritz-otel](https://github.com/gritzrpc/gritz-otel) adds server/client spans and worker OTLP metrics after fork.
+
 ## Development
 
 ```sh

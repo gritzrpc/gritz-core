@@ -15,10 +15,18 @@ RSpec.describe Gritz::Testing::Cluster do
       io.sync = true
       workers = [{ pid: Process.pid, state: "ready" }]
       emit = ->(state) { io.puts(JSON.generate(state: state, workers: workers)) }
+      grow = false
       Signal.trap("TERM") { puts "stopped"; exit }
-      Signal.trap("TTIN") { workers << { pid: Process.pid + 1, state: "ready" }; emit.call("running") }
+      Signal.trap("TTIN") { grow = true }
       emit.call("running")
-      loop { sleep 0.1 }
+      loop do
+        if grow
+          grow = false
+          workers << { pid: Process.pid + 1, state: "ready" }
+          emit.call("running")
+        end
+        sleep 0.01
+      end
     RUBY
   end
 

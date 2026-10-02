@@ -88,6 +88,21 @@ RSpec.describe Gritz::Worker::Runner do
     expect(@events.first(2)).to eq([:preload, [:boot, 2]])
   end
 
+  it "constructs a custom recorder after boot hooks and closes it after final RPC deltas and shutdown hooks" do
+    recorder = Gritz::Metrics::Recorder.new
+    @config.metrics_recorder_factory = lambda { |worker:|
+      expect(@events).to include([:boot, worker])
+      recorder
+    }
+    expect(recorder).to receive(:close) { |timeout:|
+      expect(@events).to include([:shutdown, 2])
+      expect(recorder.take_delta).to be_nil
+      expect(timeout).to be_between(0, @config.shutdown_timeout)
+    }
+    expect(@runner.run).to eq(0)
+    expect(@runner.instance_variable_get(:@recorder)).to equal(recorder)
+  end
+
   it "does not repeat preloading performed by the master" do
     @config.add_preloader { @events << :preload }
     expect(@runner.run).to eq(0)

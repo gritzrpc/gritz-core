@@ -28,6 +28,7 @@ module Gritz
           @boot_started = true
           @config.preload! unless @config.preload_app?
           @config.run_hooks(:on_worker_boot, @index)
+          @recorder = @config.metrics_recorder_factory.call(worker: @index) if @config.metrics_recorder_factory
           router = Router.new(controllers: @config.controllers, strict: @config.strict_routes, logger: @logger)
           dispatcher = Dispatcher.new(router:, middleware: @config.middleware, logger: @logger, metrics: @recorder,
                                       worker: @index, log_format: @config.log_format, log_redact: @config.log_redact)
@@ -114,6 +115,7 @@ module Gritz
                    busy_threads: stats.fetch(:busy_threads, stats.fetch(:busy, 0)), healthy: state == "ready" && @healthy,
                    checks: @checks || {}, worker_started_at: @born_at)
         @last_status = row.merge(extra)
+        @recorder.observe_worker(@last_status)
         @status&.write(@owner_channel ? snapshot : @last_status)
       end
 
@@ -184,6 +186,7 @@ module Gritz
         @status.io.wait_writable((deadline - monotonic).clamp(0, 0.01)) until !@status || @status.flush || @status.closed? || monotonic >= deadline
       ensure
         begin
+          cleanup { @recorder.close(timeout: [(deadline || monotonic) - monotonic, 0].max) }
           @signals&.close
           @admin&.close
         ensure

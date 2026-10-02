@@ -56,6 +56,10 @@ module Gritz
         end
       end
 
+      # Optional process observations and shutdown for installed worker backends.
+      def observe_worker(_status); end
+      def close(timeout: nil); end
+
       # The caller retains this detached delta until its status channel accepts the row.
       def take_delta(max_bytes: Supervisor::StatusChannel::MAX_LINE_BYTES - 4096)
         raise ArgumentError, "Metric packet budget must be positive" unless max_bytes.is_a?(Integer) && max_bytes.positive?

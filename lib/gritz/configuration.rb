@@ -28,7 +28,7 @@ module Gritz
     }.freeze
     HOOKS = %i[before_fork on_worker_boot on_worker_shutdown].freeze
 
-    attr_accessor(*DEFAULTS.keys, :controllers, :middleware, :preload_app)
+    attr_accessor(*DEFAULTS.keys, :controllers, :middleware, :preload_app, :metrics_recorder_factory)
     attr_reader :health_checks
 
     def initialize
@@ -98,6 +98,9 @@ module Gritz
       validate_tls!
       raise ConfigurationError, "controllers must be an Array of classes" unless controllers.is_a?(Array) && controllers.all?(Class)
       raise ConfigurationError, "middleware must be a Stack" unless middleware.is_a?(Middleware::Stack)
+      if metrics_recorder_factory && !metrics_recorder_factory.respond_to?(:call)
+        raise ConfigurationError, "metrics recorder factory must be callable"
+      end
       raise ConfigurationError, "preload_app must be boolean" unless [true, false].include?(preload_app)
       unless log_redact.all? { |name| name.is_a?(String) || name.is_a?(Symbol) }
         raise ConfigurationError, "log_redact must contain metadata names"
@@ -116,7 +119,9 @@ module Gritz
       validate!
       raise ConfigurationError, "This release supports transport :native" unless transport == :native
       raise ConfigurationError, "This release supports listener_strategy :reuseport" unless listener_strategy == :reuseport
-      raise ConfigurationError, "This release supports metrics_backend :pipe" unless metrics_backend == :pipe
+      unless metrics_backend == :pipe || (metrics_backend == :otlp && metrics_recorder_factory)
+        raise ConfigurationError, "metrics_backend requires an installed recorder (:pipe is built in)"
+      end
       raise ConfigurationError, "This release supports phased_restart_surge 1" unless phased_restart_surge == 1
 
       unless worker_recycle.empty?
