@@ -43,6 +43,14 @@ RSpec.describe "Configuration and DSL" do
     expect { load_config("", env: { "GRITZ_STRICT_ROUTES" => "perhaps" }) }.to raise_error(Gritz::ConfigurationError)
   end
 
+  it "disables reflection by default and accepts explicit boolean configuration" do
+    expect(Gritz::Configuration.new.reflection).to be false
+    expect(load_config("reflection true", env: {}).reflection).to be true
+    expect(load_config("reflection true", env: { "GRITZ_REFLECTION" => "false" }).reflection).to be false
+    expect { load_config("reflection :development", env: {}) }.to raise_error(Gritz::ConfigurationError, /reflection/)
+    expect { load_config("", env: { "GRITZ_REFLECTION" => "perhaps" }) }.to raise_error(Gritz::ConfigurationError, /GRITZ_REFLECTION/)
+  end
+
   it "rejects invalid types, nonfinite times, enum values and addresses" do
     [{ threads: 0 }, { workers: "2" }, { drain_delay: Float::INFINITY }, { fork_guard: :ignore },
      { bind: "host" }, { bind: "host:65536" }, { worker_recycle: { jitter: 1.1 } }].each do |values|

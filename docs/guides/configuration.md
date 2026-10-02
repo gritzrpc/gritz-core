@@ -22,6 +22,7 @@ Configure callbacks, controller classes and middleware in Ruby.
 | `fork_mode` | `:clean` | `:clean` or experimental `:grpc_fork_support` |
 | `fork_guard` | `:raise` | `:raise`, `:warn`, or `:off` |
 | `strict_routes` | `false` | Fail boot on missing application actions |
+| `reflection` | `false` | Enable native gRPC Reflection v1/v1alpha |
 | `drain_delay` | `5.0` | Seconds before sending TERM to workers |
 | `shutdown_timeout` | `25.0` | Positive seconds; grace after TERM before KILL |
 | `worker_boot_timeout` | `60.0` | Positive seconds allowed for worker startup |
@@ -134,3 +135,5 @@ are unsupported by grpc. Keep `:clean` for ordinary deployments.
 `Gritz::Testing::Cluster.start(config_path: "config/gritz.rb")` on Linux to start
 a supervisor in a fresh interpreter, wait with `wait_until(workers: 4)`, inspect
 `workers`/`status`, send signals, and stop with guaranteed process cleanup.
+
+Add [gritz-rails](https://github.com/gritzrpc/gritz-rails) and call `rails_app` in the configuration file for Rails RPC loading, preloading and executor cleanup. Rails development requires `workers 0` and enables Reflection by default; subsequent `reflection false` or `GRITZ_REFLECTION=false` overrides it. Production keeps Reflection disabled unless explicitly enabled. Protobuf and route schema changes require a server restart.

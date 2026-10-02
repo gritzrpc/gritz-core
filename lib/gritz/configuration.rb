@@ -10,7 +10,7 @@ module Gritz
       workers: 0, threads: 16, max_waiting_requests: 64,
       transport: :native, listener_strategy: :reuseport,
       bind: "0.0.0.0:50051", admin_bind: "127.0.0.1:9090",
-      fork_mode: :clean, fork_guard: :raise, strict_routes: false,
+      fork_mode: :clean, fork_guard: :raise, strict_routes: false, reflection: false,
       drain_delay: 5.0, shutdown_timeout: 25.0, worker_boot_timeout: 60.0,
       worker_timeout: 30.0, status_interval: 1.0, min_ready_workers: 1,
       phased_restart_surge: 1, max_connection_age: 300.0,

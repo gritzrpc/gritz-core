@@ -18,8 +18,10 @@ Gem::Specification.new do |spec|
     "changelog_uri" => "#{spec.homepage}/blob/main/CHANGELOG.md",
     "rubygems_mfa_required" => "true"
   }
-  spec.files = Dir.chdir(__dir__) { Dir["lib/**/*.rb", "README.md", "LICENSE.txt", "CHANGELOG.md"] }
+  spec.files = Dir.chdir(__dir__) { Dir["lib/**/*.rb", "exe/*", "README.md", "LICENSE.txt", "CHANGELOG.md"] }
   spec.require_paths = ["lib"]
+  spec.bindir = "exe"
+  spec.executables = ["gritz-migrate-gruf"]
   spec.add_dependency "fiddle", ">= 1.1", "< 3"
   spec.add_dependency "google-protobuf", ">= 4.33", "< 5"
   spec.add_dependency "json", ">= 2.7", "< 3"
