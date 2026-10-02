@@ -53,7 +53,9 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
     while @writer_io.write_nonblock("x" * 512, exception: false).is_a?(Integer)
       # Fill the real pipe so the status writer has no available space.
     end
-    expect(@writer.write(pid: 45)).to be(false)
+    expect(@writer.write(pid: 45)).to be(true)
+    expect(@writer.flush).to be(false)
+    expect(@writer.write(pid: 46)).to be(false)
     expect(@reader.read).to eq([])
     @writer_io.write("\n")
     expect(@reader.read).to eq([])
@@ -65,9 +67,10 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
     allow(@writer_io).to receive(:write_nonblock).and_wrap_original do |original, bytes, **options|
       original.call(bytes.byteslice(0, 3), **options)
     end
-    expect(@writer.write(pid: 47)).to be(false)
-    5.times { @writer.write(pid: 48) }
-    expect(@reader.read.first).to eq(pid: 47)
+    expect(@writer.write(pid: 47)).to be(true)
+    4.times { @writer.flush }
+    expect(@reader.read).to eq([{ pid: 47 }])
+    expect(@writer.flush).to be(true)
   end
 
   it "marks EOF or a broken pipe closed and makes close idempotent" do
@@ -84,5 +87,13 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
     expect(broken).to be_closed
   ensure
     broken&.close
+  end
+
+  it "respects a caller's fixed byte budget while retaining incomplete JSON" do
+    @writer.write(pid: 51)
+    @writer.write(pid: 52)
+    expect(@reader.read(max_bytes: 3)).to eq([])
+    expect(@reader.read).to eq([{ pid: 51 }, { pid: 52 }])
+    expect { @reader.read(max_bytes: 0) }.to raise_error(ArgumentError)
   end
 end

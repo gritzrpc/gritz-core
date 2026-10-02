@@ -35,12 +35,13 @@ module Gritz
       def start
         raise ArgumentError, "cluster is already started" if @pid
 
+        Supervisor::Launcher.enable_subreaper!
         @reader, writer = IO.pipe
         @channel = Supervisor::StatusChannel.new(@reader)
         @log = Tempfile.new(["gritz-cluster", ".log"])
         command = @command || [
           RbConfig.ruby, "-I", $LOAD_PATH.join(File::PATH_SEPARATOR), "-rgritz/core", "-e",
-          "exit Gritz::CLI.new(status_io: IO.for_fd(3)).run(ARGV)", "--", "start", "-C", @config_path
+          "exit Gritz::CLI.new(status_io: IO.for_fd(3), launch: true).run(ARGV)", "--", "start", "-C", @config_path
         ]
         @pid = Process.spawn(@env, *command, 3 => writer, out: @log, err: @log, pgroup: true)
         self
@@ -60,6 +61,8 @@ module Gritz
       end
 
       def workers = status.fetch(:workers, [])
+
+      def master_pid = status[:pid] || @pid
 
       def logs
         return @logs || "" unless @log && !@log.closed?
@@ -83,12 +86,13 @@ module Gritz
         deadline = monotonic + timeout
         loop do
           snapshot = status
+          active_workers = snapshot.fetch(:workers, []).reject { |worker| worker[:retiring] }
           ready = if state == "ready"
-                    snapshot[:state] == "running" && snapshot[:workers]&.any? && snapshot[:workers].all? { |worker| worker[:state] == "ready" }
+                    snapshot[:state] == "running" && active_workers.any? && active_workers.all? { |worker| worker[:state] == "ready" }
                   else
                     state.nil? || snapshot[:state] == state
                   end
-          count = workers.nil? || snapshot.fetch(:workers, []).size == workers
+          count = workers.nil? || active_workers.size == workers
           return self if ready && count && (!block_given? || yield(snapshot))
 
           if exited?
@@ -120,14 +124,16 @@ module Gritz
         wait(timeout:)
         self
       rescue Timeout::Error
+        signal("QUIT") if status[:owner_pid] && !exited?
         begin
-          Process.kill("KILL", -@pid)
-        rescue Errno::ESRCH
-          # The process group may have exited between the timeout and kill.
+          wait(timeout: 0.5)
+        rescue Timeout::Error
+          owned_groups.each { |pid| kill_group(pid) }
+          wait(timeout: 5)
         end
-        wait(timeout: 5)
         self
       ensure
+        cleanup_groups if @pid && @exit_status
         @channel&.close
         @logs = logs
         @log&.close!
@@ -136,6 +142,36 @@ module Gritz
       private
 
       def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      def owned_groups
+        [@pid, *status.fetch(:masters, []).map { |master| master[:pid] }].compact.uniq
+      end
+
+      def kill_group(pid)
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH
+        nil
+      rescue Errno::EPERM
+        # Darwin may report EPERM for an already-disappeared process group.
+        begin
+          Process.kill(0, pid)
+        rescue Errno::ESRCH
+          return
+        end
+        raise
+      end
+
+      def cleanup_groups
+        groups = owned_groups.reject { |pid| pid == @pid }
+        groups.each { |pid| kill_group(pid) }
+        # Terminate every group before waiting for any adopted children.
+        groups.each do |pid| # rubocop:disable Style/CombinableLoops
+          loop { Process.waitpid(-pid) }
+        rescue Errno::ECHILD
+          nil
+        end
+        @status = @status.merge(masters: [])
+      end
 
       def exited?
         return true if @exit_status

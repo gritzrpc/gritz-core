@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "json"
 
 module Gritz
   module Middleware
@@ -32,8 +31,7 @@ module Gritz
         end
 
         error_id = SecureRandom.uuid
-        context.logger.error(JSON.generate(error_id:, request_id: context.request_id, error: e.class.name,
-                                           message: e.message, backtrace: e.backtrace))
+        context.store[:gritz_error] = { error_id: error_id, error: e.class.name, message: e.message, backtrace: e.backtrace }
         raise Errors::Internal.new(@expose_errors ? e.message : "internal error (#{error_id})", metadata: { "error-id" => error_id })
       end
     end

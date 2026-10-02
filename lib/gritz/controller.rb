@@ -96,6 +96,10 @@ module Gritz
       def initialize(call, context)
         @call = call
         @context = context
+        unless context.method.client_streaming?
+          @message = @call.read
+          @context.record_received(@message)
+        end
       end
 
       def message
@@ -104,14 +108,23 @@ module Gritz
         return @message if defined?(@message)
 
         @message = @call.read
+        @context.record_received(@message)
+        @message
       end
 
       def each_message
         return enum_for(__method__) unless block_given?
 
+        unless @context.method.client_streaming?
+          value = message
+          yield value if value
+          return
+        end
+
         @call.each_message do |message|
           @context.check_deadline!
           @context.check_cancelled!
+          @context.record_received(message)
           yield message
         end
       end
@@ -133,6 +146,7 @@ module Gritz
         @context.check_cancelled!
         @context.validate_response!(message)
         @call.write(message)
+        @context.record_sent(message)
       end
     end
   end

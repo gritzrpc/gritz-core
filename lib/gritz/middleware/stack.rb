@@ -18,7 +18,7 @@ module Gritz
       end
 
       def self.default
-        new.use(RequestId).use(Context).use(Logging).use(ExceptionMapper)
+        new.use(RequestId).use(Context).use(Metrics).use(Logging).use(ExceptionMapper)
       end
 
       def use(middleware, **options, &block)

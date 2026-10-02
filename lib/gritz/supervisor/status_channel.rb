@@ -28,7 +28,8 @@ module Gritz
         return false if line.bytesize > MAX_LINE_BYTES
 
         @pending = line
-        flush_pending.zero?
+        flush_pending
+        true
       rescue JSON::GeneratorError, JSON::NestingError
         false
       rescue IOError, SystemCallError
@@ -36,11 +37,22 @@ module Gritz
         false
       end
 
-      def read
+      # True means the accepted record is fully delivered; false means retry later.
+      def flush
+        return false if closed?
+
+        flush_pending.zero?
+      rescue IOError, SystemCallError
+        close
+        false
+      end
+
+      def read(max_bytes: MAX_READ_BYTES)
         rows = []
         return rows if closed?
+        raise ArgumentError, "Invalid status read budget" unless max_bytes.is_a?(Integer) && max_bytes.between?(1, MAX_READ_BYTES)
 
-        remaining = MAX_READ_BYTES
+        remaining = max_bytes
         while remaining.positive?
           chunk = @io.read_nonblock([4096, remaining].min, exception: false)
           break if chunk == :wait_readable

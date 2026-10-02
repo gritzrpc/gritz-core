@@ -3,11 +3,14 @@
 require "spec_helper"
 require "logger"
 require "stringio"
+require "timeout"
 
 RSpec.describe Gritz::Worker::Runner do
   before do
     @config = Gritz::Configuration.new
+    @config.workers = 1
     @config.bind = "127.0.0.1:0"
+    @config.admin_bind = "127.0.0.1:0"
     @config.status_interval = 0.001
     @log_output = StringIO.new
     @logger = Logger.new(@log_output)
@@ -19,9 +22,11 @@ RSpec.describe Gritz::Worker::Runner do
     @queue = double("signal queue", io: @signal_read, close: nil)
     allow(@queue).to receive(:drain) { @names.shift(@names.length) }
     stub_const("Gritz::Supervisor::SignalQueue", Class.new)
-    allow(Gritz::Supervisor::SignalQueue).to receive(:new).with(signals: %w[TERM INT QUIT HUP]).and_return(@queue)
+    allow(Gritz::Supervisor::SignalQueue).to receive(:new).with(signals: %w[TERM INT QUIT HUP USR1 USR2]).and_return(@queue)
     @running = false
     @adapter = double("native transport")
+    allow(@adapter).to receive(:update_health).and_return(true)
+    allow(@adapter).to receive(:drain!)
     allow(@adapter).to receive(:bind) {
       @events << :bind
       50_051
@@ -64,6 +69,7 @@ RSpec.describe Gritz::Worker::Runner do
       @events << :stop
       @running = false
     }
+    expect(IO).not_to receive(:select)
     expect(@runner.run).to eq(0)
     expect(@events).to eq([[:boot, 2], :bind, :start, :stop, [:shutdown, 2]])
     rows = @statuses.read
@@ -190,10 +196,136 @@ RSpec.describe Gritz::Worker::Runner do
   end
 
   it "supports single-process use without a status pipe" do
+    @config.workers = 0
+    @config.drain_delay = 0
     @names << "TERM"
     runner = described_class.new(index: 0, config: @config, logger: @logger)
     allow(runner).to receive(:require).with("gritz/native").and_return(true)
     expect(runner.run).to eq(0)
     expect(@events).to include([:shutdown, 0])
+  end
+
+  it "warns and keeps single-process readiness after USR1 instead of applying an internal worker drain" do
+    @config.workers = 0
+    @config.drain_delay = 0
+    count = 0
+    allow(@adapter).to receive(:stats) do
+      count += 1
+      @names << (count == 1 ? "USR1" : "TERM")
+      { requests_total: 0 }
+    end
+    expect(@runner.run).to eq(0)
+    rows = @statuses.read
+    expect(rows.count { |row| row[:state] == "ready" }).to eq(2)
+    expect(@adapter).to have_received(:drain!).once
+    expect(@log_output.string).to include("USR1 requires workers > 0")
+  end
+
+  it "keeps single-process status flowing through the drain delay without extending it on repeated TERM" do
+    @config.workers = 0
+    @config.drain_delay = 0.02
+    @config.shutdown_timeout = 0.1
+    started = nil
+    allow(@adapter).to receive(:drain!) { started = Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+    expect(@adapter).to receive(:stop) do |deadline:|
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be >= @config.drain_delay
+      expect(deadline - Time.now).to be_within(0.02).of(@config.shutdown_timeout)
+      @running = false
+    end
+    expect(Timeout.timeout(0.5) { @runner.run }).to eq(0)
+    draining = @statuses.read.select { |row| row[:state] == "draining" }
+    expect(draining.size).to be > 1
+    expect(draining).to all(include(healthy: false))
+    expect(@adapter).to have_received(:drain!).once
+  end
+
+  it "publishes failing health checks and keeps draining sticky after USR1" do
+    @config.health_checks[:database] = -> { raise "database unavailable" }
+    count = 0
+    allow(@adapter).to receive(:stats) do
+      count += 1
+      @names << (count == 1 ? "USR1" : "TERM")
+      { requests_total: 0 }
+    end
+    expect(@adapter).to receive(:update_health).with(ready: true, checks: { database: false }).at_least(:once).and_return(false)
+    expect(@runner.run).to eq(0)
+    rows = @statuses.read
+    expect(rows.find { |row| row[:state] == "ready" }).to include(healthy: false, checks: { database: false })
+    expect(rows.drop_while { |row| row[:state] != "draining" }.map { |row| row[:state] }).not_to include("ready")
+    expect(@adapter).to have_received(:drain!).at_least(:once)
+  end
+
+  it "flushes final RPC deltas before closing the pipe" do
+    @config.add_hook(:on_worker_shutdown) do
+      @runner.instance_variable_get(:@recorder).record_rpc(service: "test.Echo", method: "Echo", code: 0, duration: 0.01, requests: 1, responses: 1)
+    end
+    expect(@runner.run).to eq(0)
+    packets = @statuses.read.select { |row| row[:type] == "metrics" }
+    expect(packets.map { |row| row[:seq] }).to eq([1])
+    expect(packets.first[:delta][:rpc].first[:count]).to eq(1)
+  end
+
+  it "includes overload rejections occurring during graceful transport shutdown in the final delta" do
+    rejected_total = 1
+    allow(@adapter).to receive(:stats) do
+      @names << "TERM"
+      { rejected_total: rejected_total }
+    end
+    allow(@adapter).to receive(:stop) do
+      rejected_total = 4
+      @running = false
+    end
+    expect(@runner.run).to eq(0)
+    packets = @statuses.read.select { |row| row[:type] == "metrics" }
+    expect(packets.sum { |row| row[:delta][:rejected] }).to eq(4)
+  end
+
+  it "does not raise when the flush deadline passes between checking it and waiting for a writable pipe" do
+    recorder = @runner.instance_variable_get(:@recorder)
+    recorder.record_rpc(service: "test.Echo", method: "Echo", code: 0, duration: 0.01, requests: 1, responses: 1)
+    channel = double("backpressured status channel", io: @status_write, flush: false, write: false, closed?: false, close: nil)
+    @runner.instance_variable_set(:@status, channel)
+    @runner.instance_variable_set(:@stop_deadline, 1.0)
+    allow(@runner).to receive(:monotonic).and_return(0.0, 1.1)
+    expect { @runner.send(:finish) }.not_to raise_error
+  end
+
+  it "retains rejected metric writes and flushes every final chunk across partial pipe writes" do
+    @config.add_hook(:on_worker_shutdown) do
+      recorder = @runner.instance_variable_get(:@recorder)
+      400.times do |index|
+        recorder.record_rpc(service: "test.Echo", method: "Method#{index}", code: 0, duration: 0.01, requests: 1, responses: 1)
+      end
+    end
+    allow(@status_write).to receive(:write_nonblock).and_wrap_original do |original, bytes, **options|
+      original.call(bytes.byteslice(0, 97), **options)
+    end
+    channel = @runner.instance_variable_get(:@status)
+    rejected = false
+    allow(channel).to receive(:write).and_wrap_original do |original, row|
+      if row[:type] == "metrics" && !rejected
+        rejected = true
+        false
+      else
+        original.call(row)
+      end
+    end
+    rows = []
+    reader = Thread.new do
+      until @statuses.closed?
+        rows.concat(@statuses.read)
+        @status_read.wait_readable(0.01) unless @status_read.closed?
+      end
+    end
+    expect(@runner.run).to eq(0)
+    expect(reader.join(2)).not_to be_nil
+    packets = rows.select { |row| row[:type] == "metrics" }
+    expect(packets.size).to be > 1
+    expect(packets.map { |row| row[:seq] }).to eq((1..packets.size).to_a)
+    expect(packets.sum { |row| row[:delta][:rpc].sum { |rpc| rpc[:count] } }).to eq(400)
+    expect(rows.last[:state]).to eq("stopped")
+  ensure
+    @status_write.close unless @status_write.closed?
+    reader&.join(2)
   end
 end

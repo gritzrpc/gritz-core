@@ -10,6 +10,8 @@ Use [gritz](https://github.com/gritzrpc/gritz) for the default framework and exe
 
 Controller tests can load `gritz/testing/rspec` or `gritz/testing/minitest` and run without a network or the grpc gem. See the [controller examples](https://github.com/gritzrpc/gritz#controllers) and [configuration guide](docs/guides/configuration.md).
 
+Supervised servers support phased replacement, fresh-interpreter hot reexec, request/memory/lifetime recycling, Admin HTTP probes and process-wide Prometheus totals. The CLI keeps one lifecycle owner across master generations; application controllers and gRPC resources stay in serving processes.
+
 ## Development
 
 ```sh

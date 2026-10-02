@@ -18,7 +18,8 @@ module Gritz
       keepalive_permit_without_calls: true,
       max_receive_message_size: 4 * 1024 * 1024,
       max_send_message_size: 4 * 1024 * 1024, max_metadata_size: 8192,
-      metrics_backend: :pipe, log_format: :json, worker_recycle: {}, tls: {}
+      metrics_backend: :pipe, log_format: :json, log_redact: [], worker_recycle: {}, tls: {},
+      pid_file: "", reexec_timeout: 60.0
     }.freeze
     ENUMS = {
       transport: %i[native async], listener_strategy: %i[reuseport inherited_fd port_per_worker],
@@ -63,7 +64,7 @@ module Gritz
       when Integer then Integer(value, 10)
       when Float then Float(value)
       when Symbol then value.to_sym
-      when Hash then JSON.parse(value, symbolize_names: true)
+      when Hash, Array then JSON.parse(value, symbolize_names: true)
       when true, false
         return true if %w[true 1].include?(value)
         return false if %w[false 0].include?(value)
@@ -86,7 +87,7 @@ module Gritz
                 end
         raise ConfigurationError, "Invalid #{name}: #{value.inspect}" unless valid
       end
-      %i[shutdown_timeout worker_boot_timeout worker_timeout status_interval].each do |name|
+      %i[shutdown_timeout worker_boot_timeout worker_timeout status_interval reexec_timeout].each do |name|
         raise ConfigurationError, "#{name} must be positive" unless public_send(name).positive?
       end
       ENUMS.each do |name, allowed|
@@ -98,6 +99,12 @@ module Gritz
       raise ConfigurationError, "controllers must be an Array of classes" unless controllers.is_a?(Array) && controllers.all?(Class)
       raise ConfigurationError, "middleware must be a Stack" unless middleware.is_a?(Middleware::Stack)
       raise ConfigurationError, "preload_app must be boolean" unless [true, false].include?(preload_app)
+      unless log_redact.all? { |name| name.is_a?(String) || name.is_a?(Symbol) }
+        raise ConfigurationError, "log_redact must contain metadata names"
+      end
+      unless health_checks.all? { |name, check| (name.is_a?(String) || name.is_a?(Symbol)) && check.respond_to?(:call) }
+        raise ConfigurationError, "health_checks must contain named callbacks"
+      end
 
       self
     end
@@ -109,11 +116,13 @@ module Gritz
       validate!
       raise ConfigurationError, "This release supports transport :native" unless transport == :native
       raise ConfigurationError, "This release supports listener_strategy :reuseport" unless listener_strategy == :reuseport
-      raise ConfigurationError, "TLS is planned for v0.3" unless tls.empty?
-      raise ConfigurationError, "worker_recycle is planned for v0.3" unless worker_recycle.empty?
-      raise ConfigurationError, "Health checks are planned for v0.3" unless health_checks.empty?
-      raise ConfigurationError, "This release supports log_format :json" unless log_format == :json
-      raise ConfigurationError, "This release reserves metrics_backend :pipe; metrics export is planned for v0.3" unless metrics_backend == :pipe
+      raise ConfigurationError, "This release supports metrics_backend :pipe" unless metrics_backend == :pipe
+      raise ConfigurationError, "This release supports phased_restart_surge 1" unless phased_restart_surge == 1
+
+      unless worker_recycle.empty?
+        raise ConfigurationError, "worker_recycle requires workers > 0" unless workers.positive?
+        raise ConfigurationError, "worker_recycle requires a fixed bind port" if bind.end_with?(":0")
+      end
       raise ConfigurationError, "grpc_fork_support requires workers > 0" if workers.zero? && fork_mode != :clean
       raise ConfigurationError, "at least one controller must be registered" if controllers.empty?
 

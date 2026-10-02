@@ -29,6 +29,19 @@ RSpec.describe "CLI" do
     expect(io.string).to include("routes", "start")
   end
 
+  it "starts its lifecycle owner before evaluating application configuration" do
+    output = StringIO.new
+    cli = Gritz::CLI.new(stdout: output, stderr: StringIO.new, env: {}, launch: true,
+                         launch_command: ["ruby", "gritz", "start", "-C", "application.rb"])
+    owner = instance_double(Gritz::Supervisor::Launcher, run: 0)
+    expect(Gritz::Configuration).not_to receive(:load)
+    expect(Gritz::Supervisor::Launcher).to receive(:new).with(
+      command: ["ruby", "gritz", "start", "-C", "application.rb"], env: {}, stdout: output,
+      stderr: an_instance_of(StringIO), logger: an_instance_of(Logger), status_io: nil
+    ).and_return(owner)
+    expect(cli.run(["start", "-C", "application.rb"])).to eq(0)
+  end
+
   it "returns actionable errors for bad input and config" do
     expect(run_cli("threads 0", "routes")).to match([1, "", /threads/])
     expect(run_cli("", "bogus")).to match([1, "", /Unknown command/])

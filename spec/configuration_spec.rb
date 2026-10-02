@@ -112,4 +112,34 @@ RSpec.describe "Configuration and DSL" do
     config.keepalive_time = 1e20
     expect { config.validate! }.to raise_error(Gritz::ConfigurationError, /keepalive_time/)
   end
+
+  it "accepts production health, recycling, log formatting and reexec settings" do
+    source = <<~RUBY
+      worker_recycle max_requests: 10, max_pss_mb: 128, max_lifetime: 30, jitter: 0.1
+      health_check(:database) { true }
+      log_format :logfmt
+      pid_file '/tmp/gritz.pid'
+    RUBY
+    config = load_config(source, env: { "GRITZ_LOG_REDACT" => '["authorization"]' })
+    config.controllers = [Class.new]
+    config.workers = 2
+    expect(config.validate_runtime!).to equal(config)
+    expect(config.log_redact).to eq(["authorization"])
+    expect(config.reexec_timeout).to eq(60.0)
+    config.reexec_timeout = 0
+    expect { config.validate! }.to raise_error(Gritz::ConfigurationError, /reexec_timeout/)
+  end
+
+  it "rejects operational settings that cannot be applied in this process mode" do
+    config = Gritz::Configuration.new
+    config.controllers = [Class.new]
+    config.worker_recycle = { max_requests: 10 }
+    expect { config.validate_runtime! }.to raise_error(Gritz::ConfigurationError, /workers > 0/)
+    config.workers = 1
+    config.bind = "127.0.0.1:0"
+    expect { config.validate_runtime! }.to raise_error(Gritz::ConfigurationError, /fixed bind port/)
+    config.bind = "127.0.0.1:50051"
+    config.phased_restart_surge = 2
+    expect { config.validate_runtime! }.to raise_error(Gritz::ConfigurationError, /phased_restart_surge/)
+  end
 end

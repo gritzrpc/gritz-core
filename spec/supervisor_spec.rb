@@ -36,6 +36,7 @@ RSpec.describe "Supervisor" do
   it "starts workers, reports readiness, and reaps them after a graceful shutdown" do
     config = Gritz::Configuration.new
     config.workers = 2
+    config.admin_bind = "127.0.0.1:0"
     config.controllers = [Class.new]
     config.drain_delay = 0
     config.shutdown_timeout = 0.5
@@ -48,11 +49,11 @@ RSpec.describe "Supervisor" do
       end
 
       def run
-        queue = Gritz::Supervisor::SignalQueue.new(signals: %w[TERM INT QUIT])
+        queue = Gritz::Supervisor::SignalQueue.new(signals: %w[TERM INT QUIT USR1])
         channel = Gritz::Supervisor::StatusChannel.new(@io)
         channel.write(pid: Process.pid, state: "ready", port: 50_051, inflight: 0)
         loop do
-          break unless queue.drain.empty?
+          break unless (queue.drain - ["USR1"]).empty?
 
           queue.io.wait_readable(0.02)
           channel.write(pid: Process.pid, state: "ready", port: 50_051, inflight: 0)

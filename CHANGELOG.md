@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Replace workers one at a time with `USR1` and recycle them by request count, memory or lifetime.
+- Reload application code with `USR2`; retain the serving master if replacement startup fails, and update the PID file after readiness.
+- Keep admin probes and Prometheus totals available across worker and master replacement. Add application health checks and per-worker status.
+- Emit one structured completion log per RPC with JSON or logfmt output and credential redaction.
+
 ## 0.2.0
 
 - Supervise forked workers with boot and heartbeat timeouts, automatic replacement, graceful shutdown, lifecycle hooks, dynamic worker counts and log reopening.

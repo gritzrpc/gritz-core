@@ -74,6 +74,27 @@ RSpec.describe Gritz::Testing::Cluster do
     cluster&.stop
   end
 
+  it "cleans a launcher's separate master process group when the owner cannot shut down" do
+    script = <<~RUBY
+      require "rbconfig"
+      Signal.trap("TERM", "IGNORE")
+      Signal.trap("QUIT", "IGNORE")
+      child = Process.spawn(RbConfig.ruby, "-e", "Signal.trap('TERM', 'IGNORE'); sleep 60", pgroup: true)
+      io = IO.for_fd(3)
+      io.puts(JSON.generate(state: "running", pid: child, masters: [{pid: child}], workers: [{pid: child, state: "ready"}]))
+      io.flush
+      sleep 60
+    RUBY
+    cluster = fake_cluster(script).start
+    cluster.wait_until
+    master = cluster.master_pid
+    expect(master).not_to eq(cluster.pid)
+    cluster.stop(timeout: 0.02)
+    expect { Process.kill(0, master) }.to raise_error(Errno::ESRCH)
+  ensure
+    cluster&.stop
+  end
+
   it "handles use before starting and a failed spawn" do
     cluster = fake_cluster("")
     expect(cluster.status).to eq(state: "starting", workers: [])
