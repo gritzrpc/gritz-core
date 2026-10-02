@@ -25,7 +25,7 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
   it "rejects malformed or oversized records and resumes at the next line" do
     @writer_io.write("invalid\n[]\n")
     expect(@reader.read).to eq([])
-    (described_class::MAX_LINE_BYTES / 4096 + 1).times do
+    ((described_class::MAX_LINE_BYTES / 4096) + 1).times do
       @writer_io.write("x" * 4096)
       expect(@reader.read).to eq([])
     end
