@@ -6,13 +6,19 @@ require "json"
 module Gritz
   module Compat
     # Selected Gruf 2.22 controller/interceptor APIs, without loading Gruf or grpc.
+    # @api public
     module Gruf
       REQUEST_KEY = Object.new.freeze
 
+      # @api private
       def self.request_for(context)
         context.store[REQUEST_KEY] ||= Request.new(context)
       end
 
+      # Wraps a Gruf-style interceptor as a Gritz server middleware.
+      # @param klass [Class] interceptor implementing #call and yielding to the action
+      # @return [Class] middleware accepted by Middleware::Stack#use
+      # @api public
       def self.interceptor(klass)
         Class.new(InterceptorAdapter) do
           define_method(:initialize) { |app, **options| super(app, klass, options) }
@@ -127,6 +133,8 @@ module Gritz
         end
       end
 
+      # Controller base retaining selected Gruf request, error and streaming APIs.
+      # @api public
       class Controller < Gritz::Controller
         include ErrorHelpers
 
@@ -155,6 +163,8 @@ module Gritz
 
       Base = Controller
 
+      # Base for migrated interceptors whose #call yields to the next handler.
+      # @api public
       class ServerInterceptor
         include ErrorHelpers
 

@@ -6,6 +6,7 @@ module Gritz
   module Compat
     module Gruf
       # Converts a deliberately small, literal-only subset of Gruf.configure.
+      # @api public
       class ConfigConverter
         ARGUMENTS = {
           "grpc.max_receive_message_length" => [:max_receive_message_size, 1],
@@ -16,6 +17,10 @@ module Gritz
           "grpc.keepalive_time_ms" => [:keepalive_time, 1000.0]
         }.freeze
 
+        # @param source [String] Ruby source containing one static Gruf.configure block
+        # @return [String] Gritz configuration requiring manual review before use
+        # @raise [Gritz::ConfigurationError] when a setting or expression cannot be converted
+        # @api public
         def convert(source)
           settings = assignments(source)
           output = { workers: 0 }
