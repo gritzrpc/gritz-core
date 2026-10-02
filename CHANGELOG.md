@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Supervise forked workers with boot and heartbeat timeouts, automatic replacement, graceful shutdown, lifecycle hooks, dynamic worker counts and log reopening.
 - Detect unsafe master-side gRPC initialization with ForkGuard and `gritz check`.

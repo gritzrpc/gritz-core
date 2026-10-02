@@ -58,7 +58,7 @@ RSpec.describe "Release preparation" do
       File.write(File.join(dir, "lib/version.rb"), "VERSION = '0.1.0'\n")
       git.call("add", ".")
       git.call("commit", "-qm", "docs")
-      env = { "GITHUB_REF_NAME" => "v0.1.0" }
+      env = { "GITHUB_REF_NAME" => "v#{Gritz::Core::VERSION}" }
       output, status = Open3.capture2e(env, "ruby", script, chdir: dir)
       expect(status.success?).to be false
       expect(output).to include("documentation-only")
