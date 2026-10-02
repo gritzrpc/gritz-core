@@ -13,7 +13,9 @@ RSpec.describe "CLI" do
     status = Tempfile.create(["gritz", ".rb"]) do |file|
       file.write(source)
       file.flush
-      Gritz::CLI.new(stdout: output, stderr: error, env: env).run([*args, "-C", file.path])
+      cli = Gritz::CLI.new(stdout: output, stderr: error, env: env)
+      allow(cli).to receive(:require).with("gritz/native").and_return(true)
+      cli.run([*args, "-C", file.path])
     end
     [status, output.string, error.string]
   end
@@ -34,8 +36,8 @@ RSpec.describe "CLI" do
     expect(run_cli("", "routes", "extra")).to match([1, "", /Unexpected argument/])
   end
 
-  it "fails before binding for features outside the initial release" do
-    expect(run_cli("workers 2", "start")).to match([1, "", /workers 0/])
+  it "fails before binding for missing controllers and unsupported features" do
+    expect(run_cli("workers 2", "start")).to match([1, "", /controller/])
     expect(run_cli("transport :async", "start")).to match([1, "", /native/])
     expect(run_cli("worker_recycle max_requests: 10", "start")).to match([1, "", /worker_recycle/])
   end

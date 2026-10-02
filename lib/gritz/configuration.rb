@@ -3,7 +3,7 @@
 require "json"
 
 module Gritz
-  # Startup settings. Process-related settings are reserved for the supervisor.
+  # Validated startup settings for single-process and supervised servers.
   # @api public
   class Configuration
     DEFAULTS = {
@@ -46,6 +46,7 @@ module Gritz
       DSL.new(config).evaluate(path) if path
       env.each do |key, value|
         next unless key.start_with?("GRITZ_")
+        next if key == "GRITZ_RELEASE" # Dependency selection in the release workflow, not a runtime setting.
 
         name = key.delete_prefix("GRITZ_").downcase.to_sym
         raise ConfigurationError, "Unknown environment setting #{key}" unless DEFAULTS.key?(name)
@@ -104,18 +105,24 @@ module Gritz
     def preload_app? = preload_app
 
     # Fail before allocating transport resources for unsupported release features.
-    def validate_single_process!
+    def validate_runtime!
       validate!
-      raise ConfigurationError, "v0.1 supports workers 0; the supervisor is planned for v0.2" unless workers.zero?
-      raise ConfigurationError, "v0.1 supports transport :native" unless transport == :native
-      raise ConfigurationError, "v0.1 supports listener_strategy :reuseport" unless listener_strategy == :reuseport
+      raise ConfigurationError, "This release supports transport :native" unless transport == :native
+      raise ConfigurationError, "This release supports listener_strategy :reuseport" unless listener_strategy == :reuseport
       raise ConfigurationError, "TLS is planned for v0.3" unless tls.empty?
-      raise ConfigurationError, "worker_recycle requires the supervisor" unless worker_recycle.empty?
+      raise ConfigurationError, "worker_recycle is planned for v0.3" unless worker_recycle.empty?
       raise ConfigurationError, "Health checks are planned for v0.3" unless health_checks.empty?
-      raise ConfigurationError, "v0.1 supports log_format :json" unless log_format == :json
-      raise ConfigurationError, "v0.1 reserves metrics_backend :pipe; metrics export is planned for v0.3" unless metrics_backend == :pipe
-      raise ConfigurationError, "grpc_fork_support requires the supervisor" unless fork_mode == :clean
+      raise ConfigurationError, "This release supports log_format :json" unless log_format == :json
+      raise ConfigurationError, "This release reserves metrics_backend :pipe; metrics export is planned for v0.3" unless metrics_backend == :pipe
+      raise ConfigurationError, "grpc_fork_support requires workers > 0" if workers.zero? && fork_mode != :clean
       raise ConfigurationError, "at least one controller must be registered" if controllers.empty?
+
+      self
+    end
+
+    def validate_single_process!
+      validate_runtime!
+      raise ConfigurationError, "Testing::Server requires workers 0; use Testing::Cluster for supervised servers" unless workers.zero?
 
       self
     end

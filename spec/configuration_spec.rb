@@ -4,6 +4,10 @@ require "spec_helper"
 require "tempfile"
 
 RSpec.describe "Configuration and DSL" do
+  it "keeps the release dependency selector out of runtime configuration" do
+    config = Gritz::Configuration.load(env: { "GRITZ_RELEASE" => "1", "GRITZ_THREADS" => "2" })
+    expect(config.threads).to eq(2)
+  end
   def load_config(source, **options)
     Tempfile.create(["gritz", ".rb"]) do |file|
       file.write(source)
