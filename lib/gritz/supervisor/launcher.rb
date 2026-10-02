@@ -49,7 +49,7 @@ module Gritz
           end
           update_lifecycle
           @admin&.poll
-          @observer&.write(status)
+          @observer&.write { status }
           @observer&.flush
           break if @stopping && @generations.empty?
 

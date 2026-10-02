@@ -63,6 +63,31 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
     expect(@reader.read).to eq([{ pid: 45 }, { pid: 46 }])
   end
 
+  it "builds a status only after pending output drains and never after close" do
+    while @writer_io.write_nonblock("x" * 512, exception: false).is_a?(Integer)
+      # Backpressure must prevent building a replacement for a pending record.
+    end
+    expect(@writer.write(pid: 53)).to be(true)
+    built = 0
+    build_status = lambda do
+      built += 1
+      { pid: 54 }
+    end
+    expect(@writer.write(&build_status)).to be(false)
+    expect(built).to eq(0)
+
+    expect(@reader.read).to eq([])
+    @writer_io.write("\n")
+    expect(@reader.read).to eq([])
+    expect(@writer.write(&build_status)).to be(true)
+    expect(built).to eq(1)
+    expect(@reader.read).to eq([{ pid: 53 }, { pid: 54 }])
+
+    @writer.close
+    expect(@writer.write(&build_status)).to be(false)
+    expect(built).to eq(1)
+  end
+
   it "finishes an interrupted record before writing another record" do
     allow(@writer_io).to receive(:write_nonblock).and_wrap_original do |original, bytes, **options|
       original.call(bytes.byteslice(0, 3), **options)

@@ -21,9 +21,10 @@ module Gritz
         @closed = io.closed?
       end
 
-      def write(status)
+      def write(status = nil)
         return false if closed? || flush_pending.positive?
 
+        status = yield if block_given?
         line = "#{JSON.generate(status)}\n"
         return false if line.bytesize > MAX_LINE_BYTES
 

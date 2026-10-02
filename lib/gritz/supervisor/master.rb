@@ -50,7 +50,7 @@ module Gritz
           advance_replacement
           maintain_worker_count unless @shutdown_at
           flush_forwarded
-          @reports&.write(@owner_channel ? status.merge(type: "status") : status) if @forwarded.empty?
+          @reports&.write { @owner_channel ? status.merge(type: "status") : status } if @forwarded.empty?
           @admin&.poll
           if @owner_channel&.closed?
             @exit_status = 1

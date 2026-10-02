@@ -4,6 +4,7 @@
 
 - Migrate Gruf controllers and server interceptors through `Gritz::Compat::Gruf`, with a configuration conversion tool.
 - Configure optional gRPC Reflection through the `reflection` setting.
+- Avoid unnecessary supervisor snapshot allocation when status consumers are paused.
 
 ## 0.4.0
 
