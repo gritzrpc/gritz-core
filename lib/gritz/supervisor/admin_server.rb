@@ -23,6 +23,7 @@ module Gritz
         @metrics = metrics
         @logger = logger
         @clients = {}
+        @read_buffer = +""
       end
 
       def ios = [@io, *@clients.keys]
@@ -68,7 +69,7 @@ module Gritz
       end
 
       def read_request(socket, client)
-        chunk = socket.read_nonblock(4096, exception: false)
+        chunk = socket.read_nonblock(4096, @read_buffer, exception: false)
         return if chunk == :wait_readable
         return drop(socket) if chunk.nil?
 

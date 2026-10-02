@@ -16,6 +16,7 @@ module Gritz
       def initialize(io)
         @io = io
         @buffer = +""
+        @read_buffer = +""
         @pending = +""
         @discarding = false
         @closed = io.closed?
@@ -55,7 +56,7 @@ module Gritz
 
         remaining = max_bytes
         while remaining.positive?
-          chunk = @io.read_nonblock([4096, remaining].min, exception: false)
+          chunk = @io.read_nonblock([4096, remaining].min, @read_buffer, exception: false)
           break if chunk == :wait_readable
 
           if chunk.nil?

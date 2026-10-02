@@ -10,6 +10,7 @@ module Gritz
       def initialize(signals:)
         @io, @writer = IO.pipe
         @pending = []
+        @read_buffer = +""
         @previous = {}
         signals.each do |name|
           @previous[name] = Signal.trap(name) do
@@ -26,7 +27,7 @@ module Gritz
 
       def drain
         loop do
-          break unless @io.read_nonblock(4096, exception: false).is_a?(String)
+          break unless @io.read_nonblock(4096, @read_buffer, exception: false).is_a?(String)
         end
         # Swap instead of clearing: a signal arriving here belongs to the next drain.
         pending = @pending

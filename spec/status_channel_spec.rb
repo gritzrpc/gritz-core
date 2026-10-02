@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "open3"
 
 RSpec.describe Gritz::Supervisor::StatusChannel do
   around do |example|
@@ -20,6 +21,30 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
     expect(@reader.read).to eq([{ pid: 42, state: "ready" }])
     @writer_io.write("\"state\":\"draining\"}\n")
     expect(@reader.read).to eq([{ pid: 43, state: "draining" }])
+  end
+
+  it "bounds allocation while polling idle status, signal and admin connections" do
+    script = <<~'RUBY'
+      require "gritz/core"
+      require "logger"
+      reader, writer = IO.pipe
+      status = Gritz::Supervisor::StatusChannel.new(reader)
+      signals = Gritz::Supervisor::SignalQueue.new(signals: [])
+      admin = Gritz::Supervisor::AdminServer.new(bind: "127.0.0.1:0", status: -> { {} }, ready: -> { true },
+        metrics: -> { "" }, logger: Logger.new(File::NULL))
+      client = TCPSocket.new("127.0.0.1", admin.address.split(":").last)
+      status.read; signals.drain; admin.poll
+      GC.start
+      GC.disable
+      before = GC.stat(:malloc_increase_bytes)
+      1000.times { status.read; signals.drain; admin.poll }
+      allocated = GC.stat(:malloc_increase_bytes) - before
+      GC.enable
+      client.close; admin.close; signals.close; status.close; writer.close
+      abort "idle polling allocated #{allocated} bytes" if allocated >= 512 * 1024
+    RUBY
+    output, result = Open3.capture2e(RbConfig.ruby, "-I", File.expand_path("../lib", __dir__), "-e", script)
+    expect(result.success?).to be(true), output
   end
 
   it "rejects malformed or oversized records and resumes at the next line" do
