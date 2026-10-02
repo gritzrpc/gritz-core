@@ -122,6 +122,36 @@ RSpec.describe Gritz::Worker::Runner do
     expect(ready.map { |row| row[:ts] }).to eq(ready.map { |row| row[:ts] }.sort)
   end
 
+  it "batches RPC metrics at the status interval, retries pending writes and flushes final observations" do
+    @config.status_interval = 0.2
+    ticks = 0
+    allow(@runner).to receive(:monotonic) { ticks / 100.0 }
+    allow(@adapter).to receive(:stats).and_return({})
+    recorder = @runner.instance_variable_get(:@recorder)
+    record = -> { recorder.record_rpc(service: "test.Echo", method: "Echo", code: 0, duration: 0.01, requests: 1, responses: 1) }
+    allow(IO).to receive(:select) do
+      ticks += 5
+      record.call
+      @names << "TERM" if ticks >= 60
+    end
+    @config.add_hook(:on_worker_shutdown) { record.call }
+    rejected = false
+    channel = @runner.instance_variable_get(:@status)
+    allow(channel).to receive(:write).and_wrap_original do |original, row|
+      if row[:type] == "metrics" && !rejected
+        rejected = true
+        false
+      else
+        original.call(row)
+      end
+    end
+
+    expect(@runner.run).to eq(0)
+    packets = @statuses.read.select { |row| row[:type] == "metrics" }
+    expect(packets.map { |row| row[:seq] }).to eq([1, 2, 3])
+    expect(packets.map { |row| row[:delta][:rpc].first[:count] }).to eq([4, 4, 5])
+  end
+
   it "reopens logs without closing the output and stops immediately on QUIT" do
     allow(@adapter).to receive(:stats) do
       @names.push("HUP", "QUIT")

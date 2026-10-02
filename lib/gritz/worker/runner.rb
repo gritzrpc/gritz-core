@@ -95,7 +95,7 @@ module Gritz
           if @pending_reexec && @owner_channel.write(type: "reexec", pid: Process.pid)
             @pending_reexec = false
           end
-          publish_metrics
+          publish_metrics if @pending_delta || now >= next_status
           @admin&.poll
           if now >= next_status
             report(@draining ? "draining" : "ready")

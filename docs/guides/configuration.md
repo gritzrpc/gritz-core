@@ -27,7 +27,7 @@ Configure callbacks, controller classes and middleware in Ruby.
 | `shutdown_timeout` | `25.0` | Positive seconds; grace after TERM before KILL |
 | `worker_boot_timeout` | `60.0` | Positive seconds allowed for worker startup |
 | `worker_timeout` | `30.0` | Positive seconds without a heartbeat before KILL |
-| `status_interval` | `1.0` | Positive seconds between heartbeats |
+| `status_interval` | `1.0` | Positive seconds between heartbeats and metric batches |
 | `max_connection_age` | `300.0` | Nonnegative seconds |
 | `max_connection_age_grace` | `30.0` | Nonnegative seconds |
 | `keepalive_time` | `60.0` | Nonnegative seconds |
@@ -109,7 +109,8 @@ tls cert: "/run/certs/server.pem", key: "/run/certs/server-key.pem", client_ca: 
 number of healthy, non-retiring workers and returns 503 during shutdown.
 `/status` exposes process, workload and health diagnostics. `/metrics` exports
 RPC duration/message histograms, rejection counts, worker/threadpool gauges,
-PSS and restart reasons. Worker counters remain after retirement and USR2.
+PSS and restart reasons. Worker metrics are batched at `status_interval`;
+pending writes retry between batches. Worker counters remain after retirement and USR2.
 Graceful shutdown flushes final deltas; SIGKILL can lose observations not yet
 sent. Health callbacks run on worker startup and each status interval; false
 or an exception makes gRPC Health and HTTP readiness fail without killing a worker.
