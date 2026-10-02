@@ -14,6 +14,8 @@ Supervised servers support phased replacement, fresh-interpreter hot reexec, req
 
 `Gritz::Client.define` creates lazy, fork-safe client constants with deadline propagation, selected request headers and middleware around complete streams. See the [client guide](docs/guides/clients.md). Optional [gritz-otel](https://github.com/gritzrpc/gritz-otel) adds server/client spans and worker OTLP metrics after fork.
 
+The optional `Gritz::Compat::Gruf` module adapts Gruf controllers, returned response streams and server interceptors. `gritz-migrate-gruf` converts supported static configuration without executing the source file. See the [Gruf migration guide](docs/guides/migrating-from-gruf.md). Add [gritz-rails](https://github.com/gritzrpc/gritz-rails) for Rails execution, generators and development reloading.
+
 ## Development
 
 ```sh

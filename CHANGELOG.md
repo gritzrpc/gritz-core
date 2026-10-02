@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- Migrate Gruf controllers and server interceptors through `Gritz::Compat::Gruf`, with a configuration conversion tool.
+- Configure optional gRPC Reflection through the `reflection` setting.
+
 ## 0.4.0
 
 - Define lazy, fork-safe clients with process-local shared connections, per-call middleware, deadline propagation and selected request headers.

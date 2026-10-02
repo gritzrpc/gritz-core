@@ -1,0 +1,25 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "gritz/core"
+require "optparse"
+
+begin
+  destination = nil
+  parser = OptionParser.new do |options|
+    options.banner = "Usage: gritz-migrate-gruf SOURCE [--output config/gritz.rb]"
+    options.on("--output PATH", "Write a new file; existing files are never overwritten") { |path| destination = path }
+  end
+  parser.parse!
+  raise OptionParser::MissingArgument, "SOURCE" unless ARGV.size == 1
+
+  output = Gritz::Compat::Gruf::ConfigConverter.new.convert(File.read(ARGV.first))
+  if destination
+    File.open(destination, File::WRONLY | File::CREAT | File::EXCL) { |file| file.write(output) }
+  else
+    $stdout.write(output)
+  end
+rescue Gritz::ConfigurationError, OptionParser::ParseError, SystemCallError => e
+  warn "gritz-migrate-gruf: #{e.message}"
+  exit 1
+end
