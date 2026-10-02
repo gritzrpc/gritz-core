@@ -8,7 +8,7 @@ Gruf本体への実行時依存や、グローバルな`Gruf`定数の置き換�
 | --- | --- |
 | `Gruf::Controllers::Base`の継承 | `Gritz::Compat::Gruf::Controller`を継承 |
 | `bind Service` | 同じ定義を維持し、設定でControllerを登録 |
-| `request.message` / `request.messages` | Unary、ブロックによるclient streaming、Enumerableによるbidiを維持 |
+| `request.message` / `request.messages` | Unaryの値、client streamingの`message.call { ... }`、Enumerableによるbidiを維持 |
 | server/bidiの返却Enumerator | 互換Controller内で列挙して送信。Middlewareも列挙終了まで有効 |
 | `request.metadata` / `active_call.metadata` | 受信メタデータを参照 |
 | `request.context` | RPC内で共有。`[]`、`[]=`、`fetch`、`key?`、`merge!`はSymbol/Stringキーを共通化 |
@@ -72,7 +72,7 @@ end
 ```
 
 登録順に外側から実行され、同じRPCのRequest・エラー状態を共有する。
-InterceptorがUnaryリクエストを先に読んでもControllerで二重に消費しない。
+InterceptorがUnaryリクエストを先に読んでも、互換Controllerと標準`Gritz::Controller`のどちらでも二重に消費・計上しない。
 Gruf組み込みInterceptorは自動では登録されない。必要な実装を確認して自分のアプリケーションへ移すか、Gritz/Railsの標準機能へ置き換える。
 認証設定を抜いたまま起動せず、不正な認証情報を拒否するテストも移す。
 

@@ -56,7 +56,7 @@ module Gritz
 
         def initialize(context)
           @rpc_context = context
-          @original = Gritz::Controller::Request.new(context.call, context)
+          @original = Gritz::Controller::Request.for(context)
           @context = RequestContext.new
           @active_call = ActiveCall.new(context)
           @error = Error.new
@@ -80,7 +80,12 @@ module Gritz
         end
 
         def method_name = "#{service_key}.#{method_key}"
-        def message = @rpc_context.method.client_streaming? ? @original.each_message : @original.message
+
+        def message
+          return @original.message unless @rpc_context.method.client_streaming?
+
+          @message ||= client_streamer? ? proc { |&block| @original.each_message(&block) } : @original.each_message
+        end
 
         def messages(&block)
           return [message] unless @rpc_context.method.client_streaming?
@@ -102,7 +107,10 @@ module Gritz
 
         def add_field_error(field, code, message = "") = @field_errors << Field.new(field, code, message)
         def has_field_errors? = !@field_errors.empty? # rubocop:disable Naming/PredicatePrefix -- Preserve the upstream Gruf method name.
-        def set_debug_info(detail, stack_trace = []) = @debug_info = DebugInfo.new(detail, Array(stack_trace))
+
+        def set_debug_info(detail, stack_trace = [])
+          @debug_info = DebugInfo.new(detail, stack_trace.is_a?(String) ? stack_trace.split("\n") : Array(stack_trace))
+        end
 
         def metadata=(value)
           @metadata = value.transform_values(&:to_s)
@@ -144,10 +152,9 @@ module Gritz
           super && ![Controller, ErrorHelpers].include?(instance_method(action).owner)
         end
 
-        def initialize(context:) # rubocop:disable Lint/MissingSuper -- The parent would read a request already consumed by an interceptor.
-          @context = context
+        def initialize(context:)
+          super
           @request = Gruf.request_for(context)
-          @stream = Gritz::Controller::Stream.new(context.call, context)
         end
 
         def error = request.error

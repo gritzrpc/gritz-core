@@ -85,6 +85,49 @@ RSpec.describe "Gruf controller compatibility" do
     expect(rpc(bidi, %w[one two])).to eq(%w[ONE TWO])
   end
 
+  it "preserves the client-streaming message Proc and bidi message Enumerable" do
+    uploading = build_controller(:client_streaming) do
+      def echo
+        raise TypeError, "expected the Gruf message Proc" unless request.message.is_a?(Proc)
+
+        result = []
+        request.message.call { |message| result << message }
+        result.join(":")
+      end
+    end
+    expect(rpc(uploading, %w[one two])).to eq("one:two")
+    bidi = build_controller(:bidi) do
+      def echo
+        request.message.each { |message| stream.write(message.upcase) }
+      end
+    end
+    expect(rpc(bidi, %w[one two])).to eq(%w[ONE TWO])
+  end
+
+  it "lets migrated interceptors wrap standard controllers without rereading or double-counting messages" do
+    interceptor = Class.new(Gritz::Compat::Gruf::ServerInterceptor) do
+      def call
+        raise "wrong first request" unless request.message == "hello"
+
+        yield
+      end
+    end
+    bound = service
+    captured = nil
+    klass = Class.new(Gritz::Controller) do
+      bind bound
+      define_method(:echo) do
+        captured = context
+        request.message.upcase
+      end
+    end
+    stack = Gritz::Middleware::Stack.default.use(Gritz::Compat::Gruf.interceptor(interceptor))
+    output = StringIO.new
+    expect(rpc(klass, middleware: stack, logger: Logger.new(output))).to eq("HELLO")
+    expect(captured.requests_count).to eq(1)
+    expect(output.string).to include('"bytes_in":5')
+  end
+
   it "retains Gruf fail! positional application codes and JSON error trailers" do
     klass = build_controller do
       def echo
@@ -111,14 +154,14 @@ RSpec.describe "Gruf controller compatibility" do
     klass = build_controller do
       def echo
         add_field_error(:name, :required, "name required")
-        set_debug_info("application detail", ["fixture line"])
+        set_debug_info("application detail", "fixture line\nsecond line")
         fail!(:invalid_argument, :invalid_product, "invalid") if has_field_errors?
       end
     end
     expect { rpc(klass) }.to raise_error(Gritz::Errors::InvalidArgument) do |error|
       data = JSON.parse(error.metadata.fetch("error-internal-bin"))
       expect(data.fetch("field_errors")).to eq([{ "field_name" => "name", "error_code" => "required", "message" => "name required" }])
-      expect(data.fetch("debug_info")).to eq("detail" => "application detail", "stack_trace" => ["fixture line"])
+      expect(data.fetch("debug_info")).to eq("detail" => "application detail", "stack_trace" => ["fixture line", "second line"])
     end
   end
 

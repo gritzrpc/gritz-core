@@ -42,7 +42,7 @@ module Gritz
 
     def initialize(context:)
       @context = context
-      @request = Request.new(context.call, context)
+      @request = Request.for(context)
       @stream = Stream.new(context.call, context)
     end
 
@@ -93,6 +93,13 @@ module Gritz
 
     # @api public
     class Request
+      STORE_KEY = Object.new.freeze
+
+      # @api private
+      def self.for(context)
+        context.store[STORE_KEY] ||= new(context.call, context)
+      end
+
       def initialize(call, context)
         @call = call
         @context = context
