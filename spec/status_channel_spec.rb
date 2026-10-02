@@ -25,8 +25,8 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
   it "rejects malformed or oversized records and resumes at the next line" do
     @writer_io.write("invalid\n[]\n")
     expect(@reader.read).to eq([])
-    3.times do
-      @writer_io.write("x" * described_class::MAX_LINE_BYTES)
+    (described_class::MAX_LINE_BYTES / 4096 + 1).times do
+      @writer_io.write("x" * 4096)
       expect(@reader.read).to eq([])
     end
     @writer_io.write("\n{\"pid\":44}\n")
@@ -34,6 +34,19 @@ RSpec.describe Gritz::Supervisor::StatusChannel do
     expect(@writer.write(message: "x" * described_class::MAX_LINE_BYTES)).to be(false)
     expect(@writer.write(value: Float::NAN)).to be(false)
     expect(@writer).not_to be_closed
+  end
+
+  it "reports clusters whose combined worker statuses exceed a single pipe write" do
+    snapshot = { state: "running", workers: Array.new(32) { |index| { pid: index, state: "ready", stats: "x" * 256 } } }
+    rows = []
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1
+    loop do
+      @writer.write(snapshot)
+      rows.concat(@reader.read)
+      break if rows.any?
+      raise "snapshot stalled" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+    end
+    expect(rows.first).to eq(snapshot)
   end
 
   it "returns promptly when the pipe is full and preserves partial writes" do

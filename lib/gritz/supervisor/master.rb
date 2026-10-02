@@ -79,7 +79,8 @@ module Gritz
           exit_status = 1
           begin
             reader.close
-            @signals.close_in_child
+            # Restore all inherited master traps, including CHLD and resize signals.
+            @signals.close
             @reports&.close
             @workers.each_value(&:close)
             Transport::Native.postfork_child if experimental
@@ -131,7 +132,14 @@ module Gritz
 
           handle = @workers.delete(pid)
           handle.close
-          @logger.info("Worker #{handle.index} exited pid=#{pid} status=#{result.last}")
+          child_status = result.last
+          @logger.info("Worker #{handle.index} exited pid=#{pid} status=#{child_status}")
+          startup_failed = child_status.exited? && !@ever_ready && !@shutdown_at && !handle.term_at
+          shutdown_failed = @shutdown_at && child_status.exited? && !child_status.success?
+          if handle.state != "killed" && (startup_failed || shutdown_failed)
+            @exit_status = 1
+            begin_shutdown(immediate: true) if startup_failed
+          end
         rescue Errno::ECHILD
           @workers.delete(pid)&.close
         end

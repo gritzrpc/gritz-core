@@ -7,7 +7,8 @@ module Gritz
     # Bounded, nonblocking JSON Lines over a worker's dedicated status pipe.
     # @api private
     class StatusChannel
-      MAX_LINE_BYTES = 4096
+      # ponytail: master snapshots are capped at 64 KiB; chunk reports if clusters outgrow this bound.
+      MAX_LINE_BYTES = 64 * 1024
       MAX_READ_BYTES = 64 * 1024
 
       attr_reader :io
@@ -41,7 +42,7 @@ module Gritz
 
         remaining = MAX_READ_BYTES
         while remaining.positive?
-          chunk = @io.read_nonblock([MAX_LINE_BYTES, remaining].min, exception: false)
+          chunk = @io.read_nonblock([4096, remaining].min, exception: false)
           break if chunk == :wait_readable
 
           if chunk.nil?
