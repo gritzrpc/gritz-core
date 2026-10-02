@@ -1,6 +1,6 @@
 # Gritz Core
 
-Transport-independent controllers, routing, middleware, configuration and network-free testing for Ruby gRPC applications. Requires CRuby 3.3 or later. This gem has no grpc dependency and never loads a transport by itself.
+Transport-independent controllers, routing, middleware, configuration, forked-worker supervision and network-free testing for Ruby gRPC applications. Requires CRuby 3.3 or later. This gem has no grpc dependency. Requiring the core does not load a transport; starting a server loads the selected adapter.
 
 ```ruby
 require "gritz/core"
