@@ -135,6 +135,35 @@ RSpec.describe "Supervisor operations" do
     expect(@master.run).to eq(1)
   end
 
+  it "publishes master snapshots at the status interval while reporting lifecycle changes immediately" do
+    ticks = 0
+    rows = []
+    reports = double("reports", close: nil)
+    allow(reports).to receive(:write) do |&block|
+      rows << [ticks, block.call]
+      true
+    end
+    @master.instance_variable_set(:@reports, reports)
+    @config.controllers = [Class.new]
+    allow(@master).to receive(:now) { 100.0 + ticks.fdiv(20) }
+    allow(@master).to receive(:require).with("gritz/native").and_return(true)
+    allow(Gritz::ForkGuard).to receive(:activate).and_return(nil)
+    allow(Gritz::Supervisor::AdminServer).to receive(:new).and_return(double("admin", poll: nil, ios: [], close: nil))
+    allow(Process).to receive(:waitpid2).and_return(nil)
+    allow(IO).to receive(:select) do
+      ticks += 1
+      @master.send(:handle_signal, "TTOU") if ticks == 21
+      if ticks == 22
+        @master.send(:begin_shutdown, immediate: true)
+        @master.workers.clear
+      end
+    end
+    expect(@master.run).to eq(0)
+    expect(rows.map(&:first)).to eq([0, 20, 21, 22])
+    expect(rows[2].last).to include(desired: 1)
+    expect(rows.last.last).to include(state: "draining", workers: [])
+  end
+
   it "waits for writable owner IPC instead of spinning on worker pipes whose reads are paused" do
     reader, writer = IO.pipe
     @pipes.push(reader, writer)

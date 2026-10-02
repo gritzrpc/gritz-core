@@ -50,7 +50,10 @@ module Gritz
           advance_replacement
           maintain_worker_count unless @shutdown_at
           flush_forwarded
-          @reports&.write { @owner_channel ? status.merge(type: "status") : status } if @forwarded.empty?
+          if @reports && @forwarded.empty? && (!@next_report_at || now >= @next_report_at || @shutdown_at) &&
+             @reports.write { @owner_channel ? status.merge(type: "status") : status }
+            @next_report_at = now + @config.status_interval
+          end
           @admin&.poll
           if @owner_channel&.closed?
             @exit_status = 1
@@ -132,6 +135,7 @@ module Gritz
         handle = WorkerHandle.new(pid: pid, index: index, status_io: reader)
         handle.recycle_factor = 1.0 + (rand * @config.worker_recycle.fetch(:jitter, 0.0))
         @workers[pid] = handle
+        @next_report_at = nil
         @logger.info("Worker #{index} spawned pid=#{pid}")
         handle
       rescue StandardError
@@ -159,7 +163,9 @@ module Gritz
             end
             next
           end
+          changed = handle.state != message[:state] || (message.key?(:healthy) && handle.stats[:healthy] != message[:healthy])
           handle.update(message, now: now)
+          @next_report_at = nil if changed
           if message[:state] == "failed" && !@ever_ready
             @exit_status = 1
             begin_shutdown
@@ -207,6 +213,7 @@ module Gritz
             break if handle.channel.closed?
           end
           @workers.delete(pid)
+          @next_report_at = nil
           @metrics.forget(handle)
           handle.close
           child_status = result.last
@@ -223,10 +230,12 @@ module Gritz
           break unless @forwarded.empty?
         rescue Errno::ECHILD
           @workers.delete(pid)&.close
+          @next_report_at = nil
         end
       end
 
       def handle_signal(signal)
+        @next_report_at = nil
         case signal
         when "TERM", "INT" then begin_shutdown
         when "QUIT" then begin_shutdown(immediate: true)
@@ -301,6 +310,7 @@ module Gritz
             kill(fresh) if fresh
             @logger.warn("Replacement failed; keeping previous workers")
             @replacement = nil
+            @next_report_at = nil
             @replacement_queue.clear
             @recycle_retry_at = now + @config.worker_boot_timeout
             return true
@@ -314,6 +324,7 @@ module Gritz
           return if old || !@replacement[:retired]
 
           @replacement = nil
+          @next_report_at = nil
         end
         while (entry = @replacement_queue.shift)
           old_pid, reason = entry

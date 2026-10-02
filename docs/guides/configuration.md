@@ -27,7 +27,7 @@ Configure callbacks, controller classes and middleware in Ruby.
 | `shutdown_timeout` | `25.0` | Positive seconds; grace after TERM before KILL |
 | `worker_boot_timeout` | `60.0` | Positive seconds allowed for worker startup |
 | `worker_timeout` | `30.0` | Positive seconds without a heartbeat before KILL |
-| `status_interval` | `1.0` | Positive seconds between heartbeats and metric batches |
+| `status_interval` | `1.0` | Positive seconds between heartbeats, metric batches and periodic supervisor snapshots |
 | `max_connection_age` | `300.0` | Nonnegative seconds |
 | `max_connection_age_grace` | `30.0` | Nonnegative seconds |
 | `keepalive_time` | `60.0` | Nonnegative seconds |

@@ -7,6 +7,7 @@
 - Avoid unnecessary supervisor snapshot allocation when status consumers are paused.
 - Publish worker metrics at `status_interval` to reduce supervisor overhead; retain retries and final shutdown totals.
 - Eagerly load the transport-independent framework before application warmup so forked workers can share its memory.
+- Send supervisor snapshots at `status_interval`, with immediate lifecycle and health changes, to reduce parent-process allocation.
 
 ## 0.4.0
 
