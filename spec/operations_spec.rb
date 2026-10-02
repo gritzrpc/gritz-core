@@ -115,6 +115,26 @@ RSpec.describe "Supervisor operations" do
     expect(@master.instance_variable_get(:@forwarded)).to eq([{ type: "reexec", pid: Process.pid }])
   end
 
+  it "does not build master snapshots while an owner report remains blocked" do
+    reader, writer = IO.pipe
+    @pipes.push(reader, writer)
+    loop { break if writer.write_nonblock("x" * 4096, exception: false) == :wait_writable }
+    owner = Gritz::Supervisor::StatusChannel.new(writer)
+    expect(owner.write(pid: 99)).to be(true)
+    @master.instance_variable_set(:@owner_channel, owner)
+    @master.instance_variable_set(:@reports, owner)
+    @config.controllers = [Class.new]
+    allow(@master).to receive(:require).with("gritz/native").and_return(true)
+    allow(Gritz::ForkGuard).to receive(:activate).and_return(nil)
+    allow(Process).to receive(:waitpid2).and_return(nil)
+    allow(IO).to receive(:select) do
+      owner.close
+      @master.workers.clear
+    end
+    expect(@master).not_to receive(:status)
+    expect(@master.run).to eq(1)
+  end
+
   it "waits for writable owner IPC instead of spinning on worker pipes whose reads are paused" do
     reader, writer = IO.pipe
     @pipes.push(reader, writer)
