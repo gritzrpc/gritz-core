@@ -24,7 +24,7 @@ RSpec.describe "CLI" do
     io = StringIO.new
     cli = Gritz::CLI.new(stdout: io, stderr: StringIO.new, env: {})
     expect(cli.run(["--version"])).to eq(0)
-    expect(io.string).to include("0.1.0")
+    expect(io.string).to include(Gritz::Core::VERSION)
     expect(cli.run(["--help"])).to eq(0)
     expect(io.string).to include("routes", "start")
   end
