@@ -6,6 +6,7 @@
 - Configure optional gRPC Reflection through the `reflection` setting.
 - Avoid unnecessary supervisor snapshot allocation when status consumers are paused.
 - Publish worker metrics at `status_interval` to reduce supervisor overhead; retain retries and final shutdown totals.
+- Eagerly load the transport-independent framework before application warmup so forked workers can share its memory.
 
 ## 0.4.0
 

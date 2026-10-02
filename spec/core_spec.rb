@@ -15,6 +15,14 @@ RSpec.describe "application core" do
     expect(status.success?).to be(true), output
   end
 
+  it "preloads framework classes with the application without loading grpc or test frameworks" do
+    script = 'require "gritz/core"; config = Gritz::Configuration.new; config.add_preloader {}; config.preload!; ' \
+             'abort "framework remains lazy" if Gritz.autoload?(:Dispatcher) || Gritz::Worker.autoload?(:Runner) || Gritz::Metrics.autoload?(:Recorder); ' \
+             'abort "transport loaded" if defined?(GRPC); abort "test framework loaded" if defined?(RSpec) || defined?(Minitest)'
+    output, status = Open3.capture2e(RbConfig.ruby, "-I", File.expand_path("../lib", __dir__), "-e", script)
+    expect(status.success?).to be(true), output
+  end
+
   def service(name = "test.Echo", methods = { SayHello: [false, false] })
     stream_type = Struct.new(:type)
     rpc_type = Struct.new(:input, :output, :input_stream, :output_stream) do

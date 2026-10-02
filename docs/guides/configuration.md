@@ -60,8 +60,9 @@ on_worker_boot { |index| setup_worker(index) }
 on_worker_shutdown { |index| cleanup_worker(index) }
 ```
 
-The master runs preload callbacks once, then calls `Process.warmup` when
-available. Each forked worker constructs its own gRPC server. Create channels,
+The master runs preload callbacks once, eagerly loads the transport-independent
+framework, then calls `Process.warmup` when available. Each forked worker
+constructs its own gRPC server. Create channels,
 credentials and servers in `on_worker_boot`, never in the master preload or
 configuration file. `gritz check` loads the config and preload callbacks and
 reports every intercepted constructor with its source location. It does not

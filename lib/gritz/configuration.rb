@@ -148,6 +148,7 @@ module Gritz
 
     def preload!
       @preloaders.each(&:call)
+      Core::LOADER.eager_load
     end
 
     def add_hook(name, &block)
