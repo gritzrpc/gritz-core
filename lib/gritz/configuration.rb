@@ -8,7 +8,7 @@ module Gritz
   class Configuration
     DEFAULTS = {
       workers: 0, threads: 16, max_waiting_requests: 64,
-      transport: :grpc_core, listener_strategy: :reuseport,
+      transport: :native, listener_strategy: :reuseport,
       bind: "0.0.0.0:50051", admin_bind: "127.0.0.1:9090",
       fork_mode: :clean, fork_guard: :raise, strict_routes: false,
       drain_delay: 5.0, shutdown_timeout: 25.0, worker_boot_timeout: 60.0,
@@ -21,7 +21,7 @@ module Gritz
       metrics_backend: :pipe, log_format: :json, worker_recycle: {}, tls: {}
     }.freeze
     ENUMS = {
-      transport: %i[grpc_core async], listener_strategy: %i[reuseport inherited_fd port_per_worker],
+      transport: %i[native async], listener_strategy: %i[reuseport inherited_fd port_per_worker],
       fork_mode: %i[clean grpc_fork_support], fork_guard: %i[raise warn off],
       metrics_backend: %i[pipe otlp mmap], log_format: %i[json logfmt]
     }.freeze
@@ -107,7 +107,7 @@ module Gritz
     def validate_single_process!
       validate!
       raise ConfigurationError, "v0.1 supports workers 0; the supervisor is planned for v0.2" unless workers.zero?
-      raise ConfigurationError, "v0.1 supports transport :grpc_core" unless transport == :grpc_core
+      raise ConfigurationError, "v0.1 supports transport :native" unless transport == :native
       raise ConfigurationError, "v0.1 supports listener_strategy :reuseport" unless listener_strategy == :reuseport
       raise ConfigurationError, "TLS is planned for v0.3" unless tls.empty?
       raise ConfigurationError, "worker_recycle requires the supervisor" unless worker_recycle.empty?
@@ -162,8 +162,8 @@ module Gritz
       if listener_strategy == :reuseport && workers > 1 && bind.end_with?(":0")
         raise ConfigurationError, "reuseport with multiple workers cannot use port 0"
       end
-      if transport == :grpc_core && listener_strategy == :inherited_fd
-        raise ConfigurationError, "grpc_core does not support inherited_fd"
+      if transport == :native && listener_strategy == :inherited_fd
+        raise ConfigurationError, "native does not support inherited_fd"
       end
       return unless fork_mode == :grpc_fork_support && !RUBY_PLATFORM.include?("linux")
 

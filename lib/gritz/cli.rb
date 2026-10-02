@@ -63,9 +63,9 @@ module Gritz
     def start(config, router, logger)
       @stdout.sync = true if @stdout.respond_to?(:sync=)
       # Load the adapter only when starting; route inspection stays transport-independent.
-      require "gritz/grpc"
+      require "gritz/native"
       dispatcher = Dispatcher.new(router: router, middleware: config.middleware, logger: logger)
-      adapter = Transport::GrpcCore.new(config: config, dispatcher: dispatcher, logger: logger)
+      adapter = Transport::Native.new(config: config, dispatcher: dispatcher, logger: logger)
       signals = []
       previous = %w[TERM INT QUIT].to_h { |name| [name, Signal.trap(name) { signals << name }] }
       config.run_hooks(:on_worker_boot, 0)

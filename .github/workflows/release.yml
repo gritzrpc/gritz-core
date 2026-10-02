@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    env:
+      GRITZ_RELEASE: '1'
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@a0102e0972be65f351c307e2d64b9314a57c8073 # v1.324.0
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Verify tag and user impact
+        run: bundle exec ruby tools/check_release.rb
+      - name: Prepare release notes
+        run: bundle exec ruby tools/release_notes.rb "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/release-notes.md"
+      - name: Test and build
+        env:
+          COVERAGE: '1'
+        run: |
+          bundle exec rake
+          bundle exec rubocop
+          bundle exec rake build
+      - name: Publish through RubyGems trusted publishing
+        uses: rubygems/release-gem@7f9650160c1a4e7989fdc9855807bdbd421d8b6b # v1.4.1
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
