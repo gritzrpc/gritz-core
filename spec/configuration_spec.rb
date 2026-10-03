@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "tempfile"
+require "tmpdir"
 
 RSpec.describe "Configuration and DSL" do
   it "keeps the release dependency selector out of runtime configuration" do
@@ -89,6 +90,27 @@ RSpec.describe "Configuration and DSL" do
                                           "grpc.max_receive_message_length" => 4 * 1024 * 1024,
                                           "grpc.max_send_message_length" => 4 * 1024 * 1024,
                                           "grpc.max_metadata_size" => 8192)
+  end
+
+  it "accepts regular TLS files and symlinks but rejects directories and named pipes" do
+    Dir.mktmpdir do |directory|
+      certificate = File.join(directory, "certificate.pem")
+      File.write(certificate, "certificate contents are checked by the transport")
+      symlink = File.join(directory, "current.pem")
+      File.symlink(certificate, symlink)
+      pipe = File.join(directory, "pipe.pem")
+      system("mkfifo", pipe, exception: true)
+      config = Gritz::Configuration.new
+      paths = { cert: certificate, key: symlink, client_ca: certificate }
+      config.tls = paths
+      expect(config.validate!).to equal(config)
+      %i[cert key client_ca].each do |name|
+        [directory, pipe].each do |path|
+          config.tls = paths.merge(name => path)
+          expect { config.validate! }.to raise_error(Gritz::ConfigurationError, /tls/)
+        end
+      end
+    end
   end
 
   it "raises clear errors for unknown DSL settings and environment names" do

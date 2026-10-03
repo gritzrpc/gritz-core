@@ -216,7 +216,8 @@ module Gritz
       end
 
       tls.each do |name, path|
-        raise ConfigurationError, "Invalid tls #{name}" unless %i[cert key client_ca].include?(name) && path.is_a?(String) && File.readable?(path)
+        valid = %i[cert key client_ca].include?(name) && path.is_a?(String) && File.file?(path) && File.readable?(path)
+        raise ConfigurationError, "Invalid tls #{name}" unless valid
       end
     end
   end

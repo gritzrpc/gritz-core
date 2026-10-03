@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Reject directories and named pipes configured as TLS certificate, key or client CA files before allocating transport resources.
+
 ## 0.6.1
 
 - Avoid formatting suppressed RPC completion logs, preserving responses, status mapping and metrics when INFO logging is disabled.
