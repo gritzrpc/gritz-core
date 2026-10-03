@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1
 
 - Avoid formatting suppressed RPC completion logs, preserving responses, status mapping and metrics when INFO logging is disabled.
 
