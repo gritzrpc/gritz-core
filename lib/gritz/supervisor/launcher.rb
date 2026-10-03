@@ -9,7 +9,7 @@ module Gritz
     # Keeps process ownership and probes stable while fresh master interpreters replace each other.
     # @api private
     class Launcher
-      Generation = Struct.new(:pid, :channel, :token, :role, :metadata, :snapshot, :deadline,
+      Generation = Struct.new(:pid, :channel, :token, :role, :metadata, :snapshot, :started_at, :deadline,
                               :kill_at, :kill_sent, :exit_status, :group_reaped, :identities, keyword_init: true)
       SIGNALS = %w[TERM INT QUIT USR1 USR2 TTIN TTOU HUP CHLD].freeze
 
@@ -91,11 +91,12 @@ module Gritz
 
       def spawn_generation
         parent, child = UNIXSocket.pair
+        started_at = monotonic
         pid = Process.spawn(@env.to_h.merge("GRITZ_INTERNAL_OWNER_FD" => "3"), *@command,
                             3 => child, out: @stdout, err: @stderr, pgroup: true)
         @serial += 1
         @candidate = Generation.new(pid: pid, channel: StatusChannel.new(parent), token: @serial, role: :candidate,
-                                    deadline: monotonic + @startup_timeout, identities: {})
+                                    started_at:, deadline: started_at + @startup_timeout, identities: {})
         @generations[pid] = @candidate
         @reexec = { state: "starting", pid: pid } if @active
       rescue StandardError
@@ -137,6 +138,7 @@ module Gritz
 
       def configure_generation(generation, metadata)
         return if generation.metadata || @stopping
+        raise ConfigurationError, "replacement master configuration timed out" if monotonic >= generation.deadline
 
         if metadata[:listener_strategy] && !%w[reuseport inherited_fd].include?(metadata[:listener_strategy])
           raise ConfigurationError, "Invalid master listener_strategy"
@@ -163,7 +165,7 @@ module Gritz
           lock_pid_file(metadata[:pid_file]) unless metadata[:pid_file].empty?
         end
         generation.metadata = metadata
-        generation.deadline = [generation.deadline, monotonic + metadata[:reexec_timeout]].min
+        generation.deadline = generation.started_at + metadata[:reexec_timeout]
         if metadata[:listener_strategy] == "inherited_fd"
           @listener ||= Listener.bind(metadata[:bind])
           generation.channel.io.send_io(@listener)

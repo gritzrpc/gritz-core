@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1
+
+- Add `gritz stats`, `stop` and `restart` to inspect the running server and signal its lifecycle owner without executing application configuration.
+- Honor configured `reexec_timeout` values above 60 seconds for initial and replacement master readiness, including time already spent starting the generation.
+- Check cooperative cancellation and pool-slot recovery for all four RPC forms in the shared transport contract.
+
 ## 0.9.0
 
 - Start the 0.9 stabilization series with the documented public API and support policy.

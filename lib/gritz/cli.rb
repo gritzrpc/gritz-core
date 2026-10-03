@@ -4,9 +4,11 @@ require "optparse"
 require "logger"
 require "rbconfig"
 require "socket"
+require "net/http"
+require "json"
 
 module Gritz
-  # Starts a server, lists routes, or checks configuration and fork safety.
+  # Starts and operates servers, lists routes, or checks configuration and fork safety.
   # @api public
   class CLI
     CHILD_BOOTSTRAP = <<~RUBY
@@ -35,11 +37,13 @@ module Gritz
       path = nil
       overrides = {}
       parser = OptionParser.new do |options|
-        options.banner = "Usage: gritz [start|routes|check] [-C config/gritz.rb] [options]"
+        options.banner = "Usage: gritz [start|routes|check|stats|stop|restart] [-C config/gritz.rb] [options]"
         options.on("-C", "--config PATH", "Configuration file") { |value| path = value }
         options.on("--workers N", Integer) { |value| overrides[:workers] = value }
         options.on("--threads N", Integer) { |value| overrides[:threads] = value }
         options.on("--bind ADDRESS") { |value| overrides[:bind] = value }
+        options.on("--admin-bind ADDRESS", "Admin HTTP host:port (operations do not load config)") { |value| overrides[:admin_bind] = value }
+        options.on("--pid-file PATH", "Active master PID file; operations fall back if Admin is unavailable") { |value| overrides[:pid_file] = value }
         options.on("--strict-routes") { overrides[:strict_routes] = true }
         options.on("-v", "--version") {
           @stdout.puts(Core::VERSION)
@@ -52,8 +56,14 @@ module Gritz
       end
       parser.parse!(args)
       command = args.shift || "start"
-      raise ConfigurationError, "Unknown command #{command}" unless %w[start routes check].include?(command)
+      raise ConfigurationError, "Unknown command #{command}" unless %w[start routes check stats stop restart].include?(command)
       raise ConfigurationError, "Unexpected argument #{args.first}" unless args.empty?
+
+      if %w[stats stop restart].include?(command)
+        raise ConfigurationError, "#{command} does not load configuration; use --admin-bind or --pid-file instead of -C" if path
+
+        return run_operation(command, overrides)
+      end
 
       logger = Logger.new(@stdout)
       logger.formatter = ->(_severity, _time, _progname, message) { "#{message}\n" }
@@ -127,5 +137,116 @@ module Gritz
       @owner_channel&.close
       listener&.close unless listener&.closed?
     end
+
+    private
+
+    def run_operation(command, overrides)
+      address = overrides.fetch(:admin_bind) { @env.fetch("GRITZ_ADMIN_BIND", Configuration::DEFAULTS[:admin_bind]) }
+      path = overrides.fetch(:pid_file) { @env.fetch("GRITZ_PID_FILE", "") }
+      file_pid = read_pid_file(path) unless path.empty? || command == "stats"
+      status = read_admin_status(address, fallback: !file_pid.nil?)
+      if command == "stats"
+        @stdout.puts "State: #{status.fetch('state')}  Master PID: #{status.fetch('pid')}  Owner PID: #{status['owner_pid'] || 'n/a'}"
+        @stdout.puts "WORKER  PID  STATE  RSS  PSS"
+        status.fetch("workers").each do |worker|
+          @stdout.puts "#{worker['index']}  #{worker.fetch('pid')}  #{worker.fetch('state')}  " \
+                       "#{format_bytes(worker['rss_bytes'])}  #{format_bytes(worker['pss_bytes'])}"
+        end
+      else
+        if status && file_pid && status.fetch("pid") != file_pid
+          raise ConfigurationError, "Admin master PID #{status.fetch('pid')} does not match PID file #{file_pid}"
+        end
+
+        pid = status ? status.fetch("owner_pid", status.fetch("pid")) : file_pid
+        signal = command == "stop" ? "TERM" : "USR2"
+        begin
+          Process.kill(signal, pid)
+        rescue SystemCallError => e
+          raise ConfigurationError, "Cannot send #{signal} to PID #{pid}: #{e.message}"
+        end
+        @stdout.puts "Sent #{signal} to PID #{pid}"
+      end
+      0
+    end
+
+    def read_pid_file(path)
+      File.open(path, File::RDONLY | File::NONBLOCK) do |file|
+        raise ConfigurationError, "PID file must be a regular file: #{path}" unless file.stat.file?
+        raise ConfigurationError, "Invalid PID file: #{path}" if file.stat.size > 64
+
+        value = file.read(65).to_s.strip
+        raise ConfigurationError, "Invalid PID file: #{path}" unless value.match?(/\A[0-9]{1,10}\z/)
+
+        validate_pid!(Integer(value, 10))
+      end
+    rescue SystemCallError => e
+      raise ConfigurationError, "Cannot read PID file #{path}: #{e.message}"
+    end
+
+    def read_admin_status(address, fallback:)
+      match = address.match(/\A(\[[a-zA-Z0-9_.:%-]+\]|[a-zA-Z0-9_.-]+):([0-9]+)\z/)
+      raise ConfigurationError, "Invalid Admin address: #{address}" unless match && Integer(match[2], 10).between?(1, 65_535)
+
+      # Operations always target the requested endpoint, never an environment HTTP proxy.
+      http = Net::HTTP.new(match[1].delete_prefix("[").delete_suffix("]"), Integer(match[2], 10), nil)
+      http.open_timeout = http.read_timeout = 2
+      http.max_retries = 0
+      body = +""
+      response_started = false
+      http.start do |client|
+        client.request(Net::HTTP::Get.new("/status")) do |response|
+          response_started = true
+          raise ConfigurationError, "Admin /status returned HTTP #{response.code}" unless response.code == "200"
+
+          response.ignore_eof = false
+          response.read_body do |chunk|
+            raise ConfigurationError, "Admin /status response exceeds 1 MiB" if body.bytesize + chunk.bytesize > 1_048_576
+
+            body << chunk
+          end
+        end
+      end
+      validate_status!(JSON.parse(body))
+    rescue SystemCallError, IOError, SocketError, Timeout::Error => e
+      return nil if fallback && !response_started
+
+      raise ConfigurationError, "Admin /status unavailable at #{address}: #{e.message}; stop/restart can use --pid-file"
+    rescue JSON::ParserError, Net::ProtocolError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError => e
+      raise ConfigurationError, "Invalid Admin /status response: #{e.message}"
+    end
+
+    def validate_pid!(pid)
+      unless pid.is_a?(Integer) && pid.between?(2, 2_147_483_647) && pid != Process.pid
+        raise ConfigurationError, "Invalid server PID: #{pid.inspect}"
+      end
+
+      pid
+    end
+
+    def validate_status!(status)
+      unless status.is_a?(Hash) && %w[starting running draining].include?(status["state"]) && status["workers"].is_a?(Array)
+        raise ConfigurationError, "Invalid Admin /status process state"
+      end
+
+      validate_pid!(status["pid"])
+      validate_pid!(status["owner_pid"]) if status.key?("owner_pid")
+      status["workers"].each do |worker|
+        unless worker.is_a?(Hash) && Supervisor::WorkerHandle::STATES.include?(worker["state"]) &&
+               worker["index"].is_a?(Integer) && worker["index"] >= 0
+          raise ConfigurationError, "Invalid Admin /status worker state"
+        end
+
+        validate_pid!(worker["pid"])
+        %w[rss_bytes pss_bytes].each do |name|
+          value = worker[name]
+          unless value.nil? || (value.is_a?(Numeric) && value.real? && value.finite? && value >= 0)
+            raise ConfigurationError, "Invalid Admin /status #{name}"
+          end
+        end
+      end
+      status
+    end
+
+    def format_bytes(value) = value ? format("%.2f MiB", value / (1024.0 * 1024)) : "n/a"
   end
 end

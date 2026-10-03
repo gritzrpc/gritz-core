@@ -19,12 +19,13 @@ RSpec.describe Gritz::Supervisor::Launcher do
       @launcher = described_class.new(
         command: [RbConfig.ruby, "-I", File.expand_path("../lib", __dir__),
                   File.expand_path("fixtures/launcher_master.rb", __dir__), @path],
-        logger: Logger.new(@log), status_io: @writer
+        logger: Logger.new(@log), status_io: @writer,
+        startup_timeout: example.metadata.fetch(:startup_timeout, 60)
       )
       example.run
     ensure
       if @thread&.alive?
-        Process.kill("QUIT", Process.pid)
+        @launcher.send(:begin_shutdown)
         @thread.join(3)
       end
       @statuses&.close
@@ -71,6 +72,91 @@ RSpec.describe Gritz::Supervisor::Launcher do
     expect(@thread.value).to eq(0)
     expect { Process.kill(0, third) }.to raise_error(Errno::ESRCH)
     expect(File.exist?(@pid_path)).to be false
+  end
+
+  it "honors a configured readiness budget beyond the bootstrap limit for initial and replacement masters", startup_timeout: 0.5 do
+    configure(reexec_timeout: 2, ready_delay: 0.7)
+    first = start.fetch(:pid)
+    configure(version: "two", reexec_timeout: 2, ready_delay: 0.7)
+    Process.kill("USR2", Process.pid)
+    second = wait_status { |row| row[:pid] != first && row[:workers].all? { |worker| worker[:version] == "two" } }
+    expect(second[:reexec]).to include(state: "complete")
+    expect(Integer(File.read(@pid_path))).to eq(second[:pid])
+    expect { Process.kill(0, first) }.to raise_error(Errno::ESRCH)
+  end
+
+  it "kills and reaps an initial master that never configures", startup_timeout: 0.5 do
+    configure(mode: "unconfigured")
+    @thread = Thread.new { @launcher.run }
+    pid = wait_status { |row| row[:pid] }.fetch(:pid)
+    expect(@thread.join(3)).not_to be_nil
+    expect(@thread.value).to eq(1)
+    expect { Process.kill(0, pid) }.to raise_error(Errno::ESRCH)
+    expect(File.exist?(@pid_path)).to be false
+  end
+
+  it "rejects configuration received after the absolute bootstrap deadline" do
+    configure(reexec_timeout: 3, configuration_delay: 0.8)
+    script = <<~RUBY
+      launcher = Gritz::Supervisor::Launcher.new(
+        command: [RbConfig.ruby, "-I", #{File.expand_path('../lib', __dir__).inspect},
+                  #{File.expand_path('fixtures/launcher_master.rb', __dir__).inspect}, ARGV.fetch(0)],
+        logger: Logger.new(File::NULL), status_io: IO.for_fd(4), startup_timeout: 0.5
+      )
+      exit launcher.run
+    RUBY
+    owner = Process.spawn(RbConfig.ruby, "-I", File.expand_path("../lib", __dir__), "-rgritz/core", "-rlogger",
+                          "-e", script, @path, 4 => @writer, out: File::NULL, err: File::NULL)
+    @thread = Thread.new { Process.waitpid2(owner).last }
+    candidate = wait_status { |row| row[:pid] }.fetch(:pid)
+    Process.kill("STOP", owner)
+    sleep 1.2
+    Process.kill("CONT", owner)
+    expect(@thread.join(3)).not_to be_nil
+    expect(@thread.value.exitstatus).to eq(1)
+    expect { Process.kill(0, candidate) }.to raise_error(Errno::ESRCH)
+    expect(File.exist?(@pid_path)).to be false
+  ensure
+    if @thread&.alive? && owner
+      Process.kill("CONT", owner)
+      Process.kill("QUIT", owner)
+      @thread.join(3)
+    end
+  end
+
+  it "reaps an unconfigured replacement and retains the serving master", startup_timeout: 0.5 do
+    configure
+    original = start.fetch(:pid)
+    configure(version: "bad", mode: "unconfigured")
+    Process.kill("USR2", Process.pid)
+    candidate = wait_status { |row| row[:reexec]&.dig(:state) == "starting" }.fetch(:reexec).fetch(:pid)
+    snapshot = wait_status { |row| row[:reexec]&.dig(:state) == "failed" && row[:masters].size == 1 }
+    expect(snapshot[:pid]).to eq(original)
+    expect(Integer(File.read(@pid_path))).to eq(original)
+    expect { Process.kill(0, candidate) }.to raise_error(Errno::ESRCH)
+    expect { Process.kill(0, original) }.not_to raise_error
+  end
+
+  it "keeps the original master when the configured readiness deadline expires", startup_timeout: 2 do
+    configure
+    original = start.fetch(:pid)
+    configure(version: "late", reexec_timeout: 0.3, ready_delay: 0.5)
+    Process.kill("USR2", Process.pid)
+    snapshot = wait_status { |row| row[:reexec]&.dig(:state) == "failed" && row[:masters].size == 1 }
+    expect(snapshot[:pid]).to eq(original)
+    expect(snapshot[:reexec][:error]).to include("readiness timed out")
+    expect(Integer(File.read(@pid_path))).to eq(original)
+  end
+
+  it "counts configuration loading against the absolute readiness budget", startup_timeout: 2 do
+    configure
+    original = start.fetch(:pid)
+    configure(version: "late", reexec_timeout: 0.5, configuration_delay: 0.3, ready_delay: 0.3)
+    Process.kill("USR2", Process.pid)
+    snapshot = wait_status { |row| row[:reexec]&.dig(:state) == "failed" && row[:masters].size == 1 }
+    expect(snapshot[:pid]).to eq(original)
+    expect(snapshot[:reexec][:error]).to include("readiness timed out")
+    expect(Integer(File.read(@pid_path))).to eq(original)
   end
 
   it "owns one inherited socket across fresh master generations" do

@@ -3,6 +3,7 @@
 Use `gritz start -C config/gritz.rb`, `gritz routes`, or `gritz check`.
 CLI `--workers`, `--threads`, `--bind` and `--strict-routes` override matching
 environment variables, which override file settings, which override defaults.
+`--admin-bind` and `--pid-file` also override their matching startup settings.
 The file may require application code and call `register_controller Controller`.
 Empty route tables are permitted for inspection; servers require a controller.
 
@@ -43,7 +44,7 @@ Configure callbacks, controller classes and middleware in Ruby.
 | `worker_recycle` | `{}` | Request, RSS/PSS or lifetime limits; requires workers > 0 and a fixed port or inherited listener |
 | `phased_restart_surge` | `1` | This release replaces one worker at a time |
 | `pid_file` | `""` | Optional active master PID file; atomically replaced on USR2 |
-| `reexec_timeout` | `60.0` | Positive seconds to wait for a replacement master |
+| `reexec_timeout` | `60.0` | Positive seconds from process launch to initial or replacement readiness |
 | `tls` | `{}` | Native only: readable regular `cert`, `key`, optional `client_ca` files; empty means plaintext |
 
 Integers must fit a signed 32-bit native channel argument. Durations must be
@@ -96,6 +97,43 @@ it cannot change the RPC bind, Admin bind or PID file path.
 With `workers 0`, `USR1` is ignored with a warning; use `USR2` to reload the
 serving process. Single-process TERM also observes `drain_delay` before stopping
 RPC acceptance.
+
+Each generation must finish loading configuration within the launcher's fixed
+60-second bootstrap limit. After configuration is accepted, `reexec_timeout`
+sets its readiness deadline from process launch, including time already spent
+loading configuration. Values above 60 seconds extend the readiness budget;
+they do not extend the separate configuration bootstrap limit.
+
+Use the operational commands without loading application code:
+
+```sh
+gritz stats --admin-bind 127.0.0.1:9090
+gritz restart --admin-bind 127.0.0.1:9090 --pid-file tmp/gritz.pid
+gritz stop --pid-file tmp/gritz.pid
+```
+
+`stats` reads `/status` and prints the master and owner PIDs plus worker state,
+RSS and PSS. Memory readings unavailable on the platform appear as `n/a`.
+`stop` sends TERM; `restart` sends USR2 for a fresh application and configuration
+load. Both target the stable `owner_pid` returned by Admin, or the master PID
+for an embedded server without a launcher. They report signal delivery; use
+`/readyz` and `/status` to observe shutdown or replacement completion.
+
+These commands use `--admin-bind`, then `GRITZ_ADMIN_BIND`, then
+`127.0.0.1:9090`. `--pid-file` overrides `GRITZ_PID_FILE`; no PID file is assumed
+by default. They do not evaluate `config/gritz.rb`, initialize a transport or
+run application callbacks. `-C` is rejected for operations; pass the deployed
+Admin address and PID path explicitly. HTTP proxies are ignored, connection
+and read timeouts are two seconds, and status responses are limited to 1 MiB.
+
+When a PID file is supplied, its master PID must match the available Admin
+status before signaling the owner. If Admin cannot be reached, `stop` and
+`restart` can signal the PID file's positive master PID directly. Redirects,
+HTTP errors and malformed status fail instead of falling back. Admin is
+read-only and unauthenticated: use only an endpoint and PID file you trust.
+PID files do not protect against a stale PID being reused by another process;
+prefer the live Admin path. A fallback restart requires a launcher-backed
+master, since an embedded master cannot perform USR2 reloads.
 
 ```ruby
 admin_bind "127.0.0.1:9090"

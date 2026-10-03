@@ -218,6 +218,58 @@ RSpec.shared_examples Gritz::Testing::TransportContract do |adapter:, service:, 
     end
   end
 
+  %i[say_hello record_names list_greetings chat].each do |action|
+    it "lets a cooperative #{action} controller observe cancellation and releases its serving slot" do
+      entered = Queue.new
+      completed = Queue.new
+      release = Queue.new
+      response = contract_reply
+      controller = contract_controller do
+        define_method(action) do
+          observing = self.request.message.name == "cancel"
+          if observing
+            entered << true
+            context.check_cancelled! until release.pop(timeout: 0.005)
+          end
+          result = response.new(message: "available")
+          context.method.server_streaming? ? stream.write(result) : result
+        ensure
+          completed << true if observing
+        end
+      end
+      with_contract_server(controller, threads: 1) do |client, server|
+        streaming_input = %i[record_names chat].include?(action)
+        message = contract_request.new(name: "cancel")
+        operation = client.public_send(action, streaming_input ? [message] : message, return_op: true, deadline: Time.now + 5)
+        caller = Thread.new do
+          result = operation.execute
+          result.to_a if %i[list_greetings chat].include?(action)
+        rescue GRPC::BadStatus => e
+          e
+        end
+        expect(entered.pop(timeout: 2)).to be(true)
+        operation.cancel
+        expect(caller.join(2)).not_to be_nil
+        expect(caller.value).to be_a(GRPC::Cancelled)
+        expect(completed.pop(timeout: 1)).to be(true)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1
+        until server.transport.stats[:inflight].zero? && (adapter == :async || server.transport.stats[:busy].zero?)
+          raise "cancelled controller retained its serving slot" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+          sleep 0.005
+        end
+        message = contract_request.new
+        result = client.public_send(action, streaming_input ? [message] : message, deadline: Time.now + 1)
+        result = result.to_a.first if %i[list_greetings chat].include?(action)
+        expect(result.message).to eq("available")
+      ensure
+        release << true
+        operation&.cancel
+        caller&.join(2)
+      end
+    end
+  end
+
   it "finishes an in-flight response during graceful shutdown" do
     entered = Queue.new
     gate = Queue.new
