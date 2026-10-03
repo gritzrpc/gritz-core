@@ -1,0 +1,159 @@
+{
+  "ruby": "ruby 3.4.11 (2026-09-23 revision 592f1ffdb3) +PRISM [aarch64-linux]",
+  "iterations": 200000,
+  "measurements": [
+    {
+      "seconds": 1.6262205640086904,
+      "allocated_objects": 9200005
+    },
+    {
+      "seconds": 1.6298435479984619,
+      "allocated_objects": 9200000
+    },
+    {
+      "seconds": 1.616925368027296,
+      "allocated_objects": 9200000
+    }
+  ],
+  "samples": 1558,
+  "missed_samples": 28,
+  "frames": [
+    {
+      "name": "<main>",
+      "file": "/workspace/gritz-core/bench/profile.rb",
+      "samples": 0,
+      "total_samples": 1188
+    },
+    {
+      "name": "StackProf.run",
+      "file": "<cfunc>",
+      "line": null,
+      "samples": 0,
+      "total_samples": 1188
+    },
+    {
+      "name": "Integer#times",
+      "file": "<internal:numeric>",
+      "line": 250,
+      "samples": 8,
+      "total_samples": 1188
+    },
+    {
+      "name": "block in <main>",
+      "file": "/workspace/gritz-core/bench/profile.rb",
+      "line": 35,
+      "samples": 0,
+      "total_samples": 1188
+    },
+    {
+      "name": "block (2 levels) in <main>",
+      "file": "/workspace/gritz-core/bench/profile.rb",
+      "line": 35,
+      "samples": 4,
+      "total_samples": 1180
+    },
+    {
+      "name": "block in <main>",
+      "file": "/workspace/gritz-core/bench/profile.rb",
+      "line": 25,
+      "samples": 20,
+      "total_samples": 1176
+    },
+    {
+      "name": "Gritz::Dispatcher#call",
+      "file": "/workspace/gritz-core/lib/gritz/dispatcher.rb",
+      "line": 32,
+      "samples": 25,
+      "total_samples": 1106
+    },
+    {
+      "name": "Gritz::Middleware::RequestId#call",
+      "file": "/workspace/gritz-core/lib/gritz/middleware/request_id.rb",
+      "line": 14,
+      "samples": 15,
+      "total_samples": 1027
+    },
+    {
+      "name": "Gritz::Middleware::Context#call",
+      "file": "/workspace/gritz-core/lib/gritz/middleware/context.rb",
+      "line": 12,
+      "samples": 6,
+      "total_samples": 801
+    },
+    {
+      "name": "Gritz::Context.with",
+      "file": "/workspace/gritz-core/lib/gritz/context.rb",
+      "line": 24,
+      "samples": 5,
+      "total_samples": 800
+    },
+    {
+      "name": "Gritz::Middleware::Metrics#call",
+      "file": "/workspace/gritz-core/lib/gritz/middleware/metrics.rb",
+      "line": 12,
+      "samples": 11,
+      "total_samples": 776
+    },
+    {
+      "name": "Gritz::Middleware::Logging#call",
+      "file": "/workspace/gritz-core/lib/gritz/middleware/logging.rb",
+      "line": 14,
+      "samples": 7,
+      "total_samples": 753
+    },
+    {
+      "name": "Gritz::Middleware::ExceptionMapper#call",
+      "file": "/workspace/gritz-core/lib/gritz/middleware/exception_mapper.rb",
+      "line": 17,
+      "samples": 1,
+      "total_samples": 707
+    },
+    {
+      "name": "Gritz::Dispatcher#initialize",
+      "file": "/workspace/gritz-core/lib/gritz/dispatcher.rb",
+      "line": 11,
+      "samples": 25,
+      "total_samples": 706
+    },
+    {
+      "name": "Class#new",
+      "file": "<cfunc>",
+      "line": null,
+      "samples": 87,
+      "total_samples": 503
+    },
+    {
+      "name": "Gritz::Controller#initialize",
+      "file": "/workspace/gritz-core/lib/gritz/controller.rb",
+      "line": 43,
+      "samples": 13,
+      "total_samples": 380
+    },
+    {
+      "name": "Gritz::Controller::Request.for",
+      "file": "/workspace/gritz-core/lib/gritz/controller.rb",
+      "line": 99,
+      "samples": 20,
+      "total_samples": 353
+    },
+    {
+      "name": "(garbage collection)",
+      "file": "",
+      "samples": 0,
+      "total_samples": 345
+    },
+    {
+      "name": "(sweeping)",
+      "file": "",
+      "samples": 335,
+      "total_samples": 335
+    },
+    {
+      "name": "Gritz::Controller::Request#initialize",
+      "file": "/workspace/gritz-core/lib/gritz/controller.rb",
+      "line": 103,
+      "samples": 8,
+      "total_samples": 324
+    }
+  ]
+}

@@ -22,22 +22,23 @@ module Gritz
         code = :internal
         raise
       ensure
-        duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000
-        fields = { request_id: context.request_id, service: context.method.service,
-                   method: context.method.name, code: code, duration_ms: duration.round(3),
-                   peer: context.peer, worker: context.worker, pid: Process.pid, bytes_in: context.bytes_in, bytes_out: context.bytes_out }
-        fields.merge!(context.store.fetch(:gritz_error, {}))
-        fields = prepare(fields, context.log_redact)
-        message = if context.log_format == :logfmt
-                    fields.map do |key, value|
-                      value = value.to_s if value.is_a?(Symbol)
-                      value = JSON.generate(value) if value.is_a?(Hash) || value.is_a?(Array)
-                      "#{key}=#{JSON.generate(value)}"
-                    end.join(" ")
-                  else
-                    JSON.generate(fields)
-                  end
-        context.logger.info(message)
+        context.logger.info do
+          duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000
+          fields = { request_id: context.request_id, service: context.method.service,
+                     method: context.method.name, code: code, duration_ms: duration.round(3),
+                     peer: context.peer, worker: context.worker, pid: Process.pid, bytes_in: context.bytes_in, bytes_out: context.bytes_out }
+          fields.merge!(context.store.fetch(:gritz_error, {}))
+          fields = prepare(fields, context.log_redact)
+          if context.log_format == :logfmt
+            fields.map do |key, value|
+              value = value.to_s if value.is_a?(Symbol)
+              value = JSON.generate(value) if value.is_a?(Hash) || value.is_a?(Array)
+              "#{key}=#{JSON.generate(value)}"
+            end.join(" ")
+          else
+            JSON.generate(fields)
+          end
+        end
       end
 
       private

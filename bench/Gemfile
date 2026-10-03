@@ -1,0 +1,5 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+gem "gritz-core", path: ".."
+gem "stackprof", "= 0.2.28"

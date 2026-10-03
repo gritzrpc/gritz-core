@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Avoid formatting suppressed RPC completion logs, preserving responses, status mapping and metrics when INFO logging is disabled.
+
 ## 0.6.0
 
 - Run Async workers through the same supervisor, CLI and real-server test helper as Native workers.

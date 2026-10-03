@@ -24,10 +24,10 @@ RSpec.describe "RPC completion observability" do
     end
   end
 
-  def dispatch(klass, messages: ["abc"], **options)
+  def dispatch(klass, messages: ["abc"], log_level: Logger::INFO, **options)
     @output = StringIO.new
     @recorder = Gritz::Metrics::Recorder.new
-    logger = Logger.new(@output)
+    logger = Logger.new(@output, level: log_level)
     logger.formatter = ->(_severity, _time, _progname, message) { "#{message}\n" }
     router = Gritz::Router.new(controllers: [klass], logger: logger)
     call = Gritz::Testing::InMemoryCall.new(method_descriptor: router.routes.values.first, messages: messages,
@@ -78,6 +78,25 @@ RSpec.describe "RPC completion observability" do
     expect(@output.string.lines.size).to eq(1)
     expect(@output.string).to include('peer="[FILTERED]"', 'request_id="[FILTERED]"', 'service="test.Observability"', 'code="ok"', "worker=2")
     expect(@output.string).not_to include("peer with spaces", "req-1")
+  end
+
+  it "skips completion formatting when INFO is disabled while preserving results and metrics" do
+    klass = controller(:unary) do
+      def unary
+        # JSON must never inspect unused diagnostic objects at WARN level.
+        diagnostic = Object.new
+        def diagnostic.to_json(*) = raise("unused diagnostic was serialized")
+        context.store[:gritz_error] = { diagnostic: diagnostic }
+        "ok"
+      end
+    end
+    expect(dispatch(klass, log_level: Logger::WARN).first).to eq("ok")
+    expect(@output.string).to be_empty
+    expect(@recorder.take_delta[:rpc].first).to include(code: 0, count: 1)
+    failure = controller(:unary) { def unary = raise "private exception message" }
+    expect { dispatch(failure, log_level: Logger::WARN) }.to raise_error(Gritz::Errors::Internal)
+    expect(@output.string).to be_empty
+    expect(@recorder.take_delta[:rpc].first).to include(code: 13, count: 1)
   end
 
   it "keeps internal error diagnostics in one masked completion row" do
