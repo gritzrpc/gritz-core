@@ -16,6 +16,7 @@ module Gritz
       end
     end
 
+    # @api private
     module ConstructorHook
       def new(...)
         Gritz::ForkGuard.check!(self)

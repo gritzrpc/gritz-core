@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
+- Start the 0.9 stabilization series with the documented public API and support policy.
 - Reject directories and named pipes configured as TLS certificate, key or client CA files before allocating transport resources.
 
 ## 0.6.1

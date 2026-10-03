@@ -15,6 +15,7 @@ Gem::Specification.new do |spec|
   spec.metadata = {
     "allowed_push_host" => "https://rubygems.org",
     "source_code_uri" => spec.homepage,
+    "documentation_uri" => "https://gritzrpc.github.io/gritz/",
     "changelog_uri" => "#{spec.homepage}/blob/main/CHANGELOG.md",
     "rubygems_mfa_required" => "true"
   }

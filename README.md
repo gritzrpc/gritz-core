@@ -31,6 +31,10 @@ bundle exec rake build
 
 Tests, lint and packaging run independently in this repository. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and the [release guide](docs/guides/releasing.md).
 
+## Documentation
+
+Read the [published guides and API reference](https://gritzrpc.github.io/gritz/), [public API policy](https://github.com/gritzrpc/gritz/blob/main/docs/public-api.md), [support policy](https://github.com/gritzrpc/gritz/blob/main/docs/support-policy.md) and [stabilization gate](https://github.com/gritzrpc/gritz/blob/main/docs/stabilization.md).
+
 ## License
 
 [MIT](LICENSE.txt).

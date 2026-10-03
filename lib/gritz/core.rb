@@ -4,6 +4,8 @@ require "zeitwerk"
 require_relative "errors"
 require_relative "core/version"
 
+# Transport-independent RPC controllers, middleware, clients and lifecycle tools.
+# @api public
 module Gritz
   module Core
     # Core loading deliberately does not require grpc or initialize transports.

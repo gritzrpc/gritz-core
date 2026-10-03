@@ -184,6 +184,7 @@ module Gritz
         end
       end
 
+      # @api private
       class InterceptorAdapter
         def initialize(app, klass, options)
           @app = app

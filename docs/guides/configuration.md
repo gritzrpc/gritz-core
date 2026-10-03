@@ -16,8 +16,8 @@ Configure callbacks, controller classes and middleware in Ruby.
 | `workers` | `0` | Nonnegative integer; 0 uses one serving process |
 | `threads` | `16` | Positive integer |
 | `max_waiting_requests` | `64` | Positive integer; ignored by grpc 1.83 |
-| `transport` | `:native` | This release supports native |
-| `listener_strategy` | `:reuseport` | This release supports reuseport |
+| `transport` | `:native` | `:native` or experimental `:async` with its adapter installed |
+| `listener_strategy` | `:reuseport` | Native: `:reuseport`; Async also supports `:inherited_fd` |
 | `bind` | `"0.0.0.0:50051"` | host:port; fixed port required with multiple workers |
 | `fork_mode` | `:clean` | `:clean` or experimental `:grpc_fork_support` |
 | `fork_guard` | `:raise` | `:raise`, `:warn`, or `:off` |
@@ -40,11 +40,11 @@ Configure callbacks, controller classes and middleware in Ruby.
 | `admin_bind` | `"127.0.0.1:9090"` | Admin HTTP host:port |
 | `min_ready_workers` | `1` | Healthy ready workers required by `/readyz` |
 | `metrics_backend` | `:pipe` | Worker deltas aggregated by the lifecycle owner |
-| `worker_recycle` | `{}` | Request, RSS/PSS or lifetime limits; requires workers > 0 and a fixed port |
+| `worker_recycle` | `{}` | Request, RSS/PSS or lifetime limits; requires workers > 0 and a fixed port or inherited listener |
 | `phased_restart_surge` | `1` | This release replaces one worker at a time |
 | `pid_file` | `""` | Optional active master PID file; atomically replaced on USR2 |
 | `reexec_timeout` | `60.0` | Positive seconds to wait for a replacement master |
-| `tls` | `{}` | Readable `cert`, `key`, optional `client_ca` paths |
+| `tls` | `{}` | Native only: readable regular `cert`, `key`, optional `client_ca` files; empty means plaintext |
 
 Integers must fit a signed 32-bit native channel argument. Durations must be
 finite, real and no larger than 2,147,483.647 seconds. Addresses support bracketed
@@ -73,8 +73,8 @@ safe. The check command still reports violations regardless of enforcement mode.
 
 Linux supports load balancing between native reuseport listeners. macOS warns
 for multiple workers; use `workers 0` for development and Linux for cluster tests.
-Port 0 is allowed with a single worker, but TTIN cannot add a worker to that
-ephemeral listener. Single-process worker hooks receive index 0.
+With `reuseport`, port 0 is allowed with a single worker, but TTIN cannot add a worker to that
+ephemeral listener. Async `inherited_fd` retains one listener and supports port 0 across resizing and master replacement. Single-process worker hooks receive index 0.
 
 | Signal to launcher or master | Behavior |
 | --- | --- |
@@ -83,7 +83,7 @@ ephemeral listener. Single-process worker hooks receive index 0.
 | `TTIN` | Add one worker |
 | `TTOU` | Gracefully remove one worker; retain at least one |
 | `HUP` | Reopen master and worker log files |
-| `USR1` | Start a ready replacement before draining each old worker; requires workers > 0 and a fixed port |
+| `USR1` | Start a ready replacement before draining each old worker; requires workers > 0 and a fixed port or inherited listener |
 | `USR2` | Start a fresh Ruby master; retain the previous generation if startup fails |
 
 The executable and `Testing::Cluster` keep a stable launcher process. It owns
@@ -139,3 +139,5 @@ a supervisor in a fresh interpreter, wait with `wait_until(workers: 4)`, inspect
 `workers`/`status`, send signals, and stop with guaranteed process cleanup.
 
 Add [gritz-rails](https://github.com/gritzrpc/gritz-rails) and call `rails_app` in the configuration file for Rails RPC loading, preloading and executor cleanup. Rails development requires `workers 0` and enables Reflection by default; subsequent `reflection false` or `GRITZ_REFLECTION=false` overrides it. Production keeps Reflection disabled unless explicitly enabled. Protobuf and route schema changes require a server restart.
+
+The Async adapter remains experimental. Native connection-age/keepalive changes, TLS/mTLS, Health and Reflection are unavailable for Async; see its [limits](https://github.com/gritzrpc/gritz-async/blob/main/README.md#initial-release-limits). Async capacity is a Fiber limit rather than an OS thread pool. `:port_per_worker` and `metrics_backend :mmap` remain reserved and fail runtime validation.
