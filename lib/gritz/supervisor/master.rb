@@ -10,12 +10,13 @@ module Gritz
       SIGNALS = %w[TERM INT QUIT TTIN TTOU HUP CHLD USR1 USR2].freeze
       attr_reader :workers
 
-      def initialize(config, logger: Logger.new($stdout), status_io: nil, owner_channel: nil)
+      def initialize(config, logger: Logger.new($stdout), status_io: nil, owner_channel: nil, listener: nil)
         @config = config
         @logger = logger
         @workers = {}
         @desired = config.workers
         @owner_channel = owner_channel
+        @listener = listener
         @reports = owner_channel || (StatusChannel.new(status_io) if status_io)
         @metrics = Metrics::Aggregator.new
         @forwarded = []
@@ -27,7 +28,8 @@ module Gritz
         @config.validate_runtime!
         raise ConfigurationError, "Supervisor requires workers > 0" unless @desired.positive?
 
-        require "gritz/native"
+        require "gritz/#{@config.transport}"
+        @listener ||= Listener.bind(@config.bind) if @config.listener_strategy == :inherited_fd
         @signals = SignalQueue.new(signals: SIGNALS)
         unless @owner_channel
           @admin = AdminServer.new(bind: @config.admin_bind, status: -> { status }, ready: -> { ready? },
@@ -36,7 +38,7 @@ module Gritz
         @guard = ForkGuard.activate(mode: @config.fork_mode == :clean ? @config.fork_guard : :off, logger: @logger)
         @config.preload! if @config.preload_app?
         Process.warmup if @config.preload_app? && Process.respond_to?(:warmup)
-        if @config.workers > 1 && !RUBY_PLATFORM.include?("linux")
+        if @config.transport == :native && @config.workers > 1 && !RUBY_PLATFORM.include?("linux")
           @logger.warn("Multiple native workers require Linux for SO_REUSEPORT load balancing; use workers 0 on macOS")
         end
         maintain_worker_count
@@ -118,7 +120,7 @@ module Gritz
             @admin&.close
             @workers.each_value(&:close)
             Transport::Native.postfork_child if experimental
-            exit_status = Worker::Runner.new(index: index, status_io: writer, config: @config, logger: @logger).run
+            exit_status = Worker::Runner.new(index: index, status_io: writer, config: @config, logger: @logger, listener: @listener).run
           rescue StandardError, LoadError, SyntaxError, SystemExit => e
             @logger.error("Worker #{index} failed: #{e.full_message}")
             exit_status = 1
@@ -242,7 +244,7 @@ module Gritz
         when "TTIN"
           if @replacement || !@replacement_queue.empty?
             @logger.warn("Wait for phased restart before resizing workers")
-          elsif !@shutdown_at && @config.bind.end_with?(":0")
+          elsif !@shutdown_at && @config.bind.end_with?(":0") && !@listener
             @logger.warn("Cannot add a reuseport worker with port 0; configure a fixed bind port")
           elsif !@shutdown_at
             @desired += 1
@@ -293,7 +295,7 @@ module Gritz
       end
 
       def fixed_port?
-        return true unless @config.bind.end_with?(":0")
+        return true if @listener || !@config.bind.end_with?(":0")
 
         @logger.warn("Worker replacement requires a fixed bind port")
         false
@@ -340,7 +342,7 @@ module Gritz
       def check_recycle
         return if @shutdown_at || @replacement || !@replacement_queue.empty? || @config.worker_recycle.empty?
         return if @recycle_retry_at && now < @recycle_retry_at
-        return if @config.bind.end_with?(":0")
+        return if @config.bind.end_with?(":0") && !@listener
 
         @workers.each_value do |handle|
           next unless handle.state == "ready" && !handle.term_at
@@ -429,6 +431,7 @@ module Gritz
         @workers.clear
         @signals&.close
         @admin&.close
+        @listener&.close
         flush_forwarded
         @reports&.close
       end

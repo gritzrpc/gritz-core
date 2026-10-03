@@ -81,6 +81,19 @@ RSpec.describe Gritz::Worker::Runner do
     expect(@status_write).to be_closed
   end
 
+  it "selects the Async adapter and passes the inherited listener" do
+    @config.transport = :async
+    stub_const("Gritz::Transport::Async", Class.new)
+    allow(Gritz::Transport::Async).to receive(:new).and_return(@adapter)
+    listener = double("inherited socket")
+    @runner = described_class.new(index: 2, status_io: @status_write, config: @config, logger: @logger, listener:)
+    allow(@runner).to receive(:require).with("gritz/async").and_return(true)
+    expect(@adapter).to receive(:bind).with(listener).and_return(50_051)
+    expect(Gritz::Transport::Native).not_to receive(:new)
+    expect(@runner.run).to eq(0)
+    expect(Gritz::Transport::Async).to have_received(:new)
+  end
+
   it "preloads in the worker only when the master did not preload" do
     @config.add_preloader { @events << :preload }
     @config.preload_app = false

@@ -117,8 +117,11 @@ module Gritz
     # Fail before allocating transport resources for unsupported release features.
     def validate_runtime!
       validate!
-      raise ConfigurationError, "This release supports transport :native" unless transport == :native
-      raise ConfigurationError, "This release supports listener_strategy :reuseport" unless listener_strategy == :reuseport
+      supported = transport == :native ? %i[reuseport] : %i[reuseport inherited_fd]
+      raise ConfigurationError, "#{transport} does not support listener_strategy #{listener_strategy}" unless supported.include?(listener_strategy)
+      if transport != :native && fork_mode == :grpc_fork_support
+        raise ConfigurationError, "grpc_fork_support requires transport :native"
+      end
       unless metrics_backend == :pipe || (metrics_backend == :otlp && metrics_recorder_factory)
         raise ConfigurationError, "metrics_backend requires an installed recorder (:pipe is built in)"
       end
@@ -126,7 +129,9 @@ module Gritz
 
       unless worker_recycle.empty?
         raise ConfigurationError, "worker_recycle requires workers > 0" unless workers.positive?
-        raise ConfigurationError, "worker_recycle requires a fixed bind port" if bind.end_with?(":0")
+        if bind.end_with?(":0") && listener_strategy != :inherited_fd
+          raise ConfigurationError, "worker_recycle requires a fixed bind port"
+        end
       end
       raise ConfigurationError, "grpc_fork_support requires workers > 0" if workers.zero? && fork_mode != :clean
       raise ConfigurationError, "at least one controller must be registered" if controllers.empty?

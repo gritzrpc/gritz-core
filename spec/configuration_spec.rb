@@ -106,7 +106,7 @@ RSpec.describe "Configuration and DSL" do
     config.controllers = [Class.new]
     expect(config.validate_single_process!).to equal(config)
     config.transport = :async
-    expect { config.validate_single_process! }.to raise_error(Gritz::ConfigurationError, /native/)
+    expect(config.validate_single_process!).to equal(config)
     config.transport = :native
     config.metrics_backend = :otlp
     expect { config.validate_single_process! }.to raise_error(Gritz::ConfigurationError, /metrics_backend/)

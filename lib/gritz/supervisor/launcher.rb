@@ -138,6 +138,10 @@ module Gritz
       def configure_generation(generation, metadata)
         return if generation.metadata || @stopping
 
+        if metadata[:listener_strategy] && !%w[reuseport inherited_fd].include?(metadata[:listener_strategy])
+          raise ConfigurationError, "Invalid master listener_strategy"
+        end
+
         %i[admin_bind bind pid_file].each do |field|
           raise ConfigurationError, "Missing master #{field}" unless metadata[field].is_a?(String)
         end
@@ -149,7 +153,7 @@ module Gritz
           raise ConfigurationError, "Invalid master #{field}" unless value.is_a?(Numeric) && value.finite? && value >= 0
         end
         if @metadata
-          %i[admin_bind bind pid_file].each do |field|
+          %i[admin_bind bind pid_file listener_strategy].each do |field|
             raise ConfigurationError, "USR2 cannot change #{field}" unless metadata[field] == @metadata[field]
           end
         else
@@ -160,6 +164,10 @@ module Gritz
         end
         generation.metadata = metadata
         generation.deadline = [generation.deadline, monotonic + metadata[:reexec_timeout]].min
+        if metadata[:listener_strategy] == "inherited_fd"
+          @listener ||= Listener.bind(metadata[:bind])
+          generation.channel.io.send_io(@listener)
+        end
       end
 
       def ready_workers(generation)
@@ -188,7 +196,7 @@ module Gritz
           return
         end
 
-        if @active.metadata[:bind].end_with?(":0")
+        if @active.metadata[:bind].end_with?(":0") && !@listener
           @reexec = { state: "failed", error: "USR2 requires a fixed RPC port" }
           @logger.warn(@reexec[:error])
           return
@@ -371,6 +379,7 @@ module Gritz
         @admin&.close
         @observer&.close
         @signals&.close
+        @listener&.close
         if @written_pid && File.file?(@pid_path) && File.read(@pid_path).strip == @written_pid.to_s
           File.unlink(@pid_path)
         end

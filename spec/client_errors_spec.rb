@@ -5,6 +5,14 @@ require "spec_helper"
 RSpec.describe "Downstream error boundaries" do
   let(:context) { Struct.new(:store).new({}) }
 
+  it "preserves an optional Async deadline without loading its adapter" do
+    stub_const("Async::GRPC::DeadlineExceededError", Class.new(StandardError))
+    error = Async::GRPC::DeadlineExceededError.new("timeout")
+    mapper = Gritz::Middleware::ExceptionMapper.new(->(_context) { raise error })
+    expect { mapper.call(context) }.to raise_error(Gritz::Errors::DeadlineExceeded, "deadline exceeded")
+    expect(context.store).to be_empty
+  end
+
   it "keeps canonical error classes while identifying decoded remote errors" do
     local = Gritz::Errors::NotFound.new("local")
     remote = Gritz::Errors::NotFound.new("remote", remote: true, details: ["details"], metadata: { "reason" => "missing" })

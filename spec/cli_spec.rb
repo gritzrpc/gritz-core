@@ -5,6 +5,7 @@ require "stringio"
 require "tempfile"
 require "open3"
 require "io/wait"
+require "socket"
 
 RSpec.describe "CLI" do
   def run_cli(source, *args, env: {})
@@ -51,12 +52,32 @@ RSpec.describe "CLI" do
 
   it "fails before binding for missing controllers and unsupported features" do
     expect(run_cli("workers 2", "start")).to match([1, "", /controller/])
-    expect(run_cli("transport :async", "start")).to match([1, "", /native/])
+    expect(run_cli("transport :async", "start")).to match([1, "", /controller/])
     expect(run_cli("worker_recycle max_requests: 10", "start")).to match([1, "", /worker_recycle/])
   end
 
   it "lets command line settings override invalid environment values at the value level" do
     status, = run_cli("", "routes", "--threads", "3", env: { "GRITZ_THREADS" => "0" })
     expect(status).to eq(0)
+  end
+
+  it "returns an actionable error if the owner closes before passing an inherited listener" do
+    output = StringIO.new
+    error = StringIO.new
+    child, owner = UNIXSocket.pair
+    owner.close
+    config = Gritz::Configuration.new
+    config.transport = :async
+    config.listener_strategy = :inherited_fd
+    config.controllers = [Class.new]
+    cli = Gritz::CLI.new(stdout: output, stderr: error, env: {}, owner_io: child)
+    allow(cli).to receive(:require).and_return(true)
+    allow(Gritz::Configuration).to receive(:load).and_return(config)
+    expect(cli.run(["start"])).to eq(1)
+    expect(error.string).to include("owner")
+    expect(child).to be_closed
+  ensure
+    child&.close unless child&.closed?
+    owner&.close unless owner&.closed?
   end
 end

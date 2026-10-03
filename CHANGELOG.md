@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- Run Async workers through the same supervisor, CLI and real-server test helper as Native workers.
+- Retain one inherited listener across forked workers and fresh master replacement, including ephemeral ports and recycling.
+- Share adapter wire tests through `Gritz::Testing::TransportContract` without loading optional test dependencies in production.
+- Preserve Async deadline errors through the standard exception middleware.
+
 ## 0.5.0
 
 - Migrate Gruf controllers and server interceptors through `Gritz::Compat::Gruf`, with a configuration conversion tool.

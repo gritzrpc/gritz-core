@@ -7,11 +7,12 @@ module Gritz
     # Owns transport resources and heartbeats in one serving process.
     # @api private
     class Runner
-      def initialize(index:, config:, logger:, status_io: nil, owner_channel: nil)
+      def initialize(index:, config:, logger:, status_io: nil, owner_channel: nil, listener: nil)
         @index = index
         @config = config
         @logger = logger
         @owner_channel = owner_channel
+        @listener = listener
         @status = owner_channel || (Supervisor::StatusChannel.new(status_io) if status_io)
         @recorder = Metrics::Recorder.new
         @metrics = Metrics::Aggregator.new
@@ -24,7 +25,7 @@ module Gritz
         begin
           @signals = Supervisor::SignalQueue.new(signals: %w[TERM INT QUIT HUP USR1 USR2])
           report("booting")
-          require "gritz/native"
+          require "gritz/#{@config.transport}"
           @boot_started = true
           @config.preload! unless @config.preload_app?
           @config.run_hooks(:on_worker_boot, @index)
@@ -32,8 +33,8 @@ module Gritz
           router = Router.new(controllers: @config.controllers, strict: @config.strict_routes, logger: @logger)
           dispatcher = Dispatcher.new(router:, middleware: @config.middleware, logger: @logger, metrics: @recorder,
                                       worker: @index, log_format: @config.log_format, log_redact: @config.log_redact)
-          @adapter = Transport::Native.new(config: @config, dispatcher:, logger: @logger)
-          @port = @adapter.bind(@config.bind)
+          @adapter = Transport.const_get(@config.transport.to_s.capitalize).new(config: @config, dispatcher:, logger: @logger)
+          @port = @adapter.bind(@listener || @config.bind)
           @adapter.start
           unless @status
             @admin = Supervisor::AdminServer.new(bind: @config.admin_bind, status: -> { snapshot }, ready: -> { ready? },

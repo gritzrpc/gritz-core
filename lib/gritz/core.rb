@@ -13,7 +13,8 @@ module Gritz
     LOADER.inflector.inflect("dsl" => "DSL", "cli" => "CLI")
     LOADER.push_dir(__dir__, namespace: Gritz)
     LOADER.ignore(__FILE__, File.join(__dir__, "errors.rb"), File.join(__dir__, "core/version.rb"))
-    LOADER.do_not_eager_load(File.join(__dir__, "testing/rspec.rb"), File.join(__dir__, "testing/minitest.rb"))
+    LOADER.do_not_eager_load(File.join(__dir__, "testing/rspec.rb"), File.join(__dir__, "testing/minitest.rb"),
+                             File.join(__dir__, "testing/transport_contract.rb"))
     LOADER.setup
   end
 end

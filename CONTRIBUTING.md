@@ -2,7 +2,7 @@
 
 Use CRuby 3.3 or later. Run `bundle install`, then `bundle exec rake`, `bundle exec rubocop` and `bundle exec rake build`. Run `COVERAGE=1 bundle exec rspec` to check line coverage. Socket-related changes must pass the real gRPC integration tests on Linux.
 
-Write a failing behavior test before changing nontrivial logic. Keep commits focused. Public API comments use YARD's `@api public` tag. Avoid loading optional testing libraries in production.
+Write a failing behavior test before changing nontrivial logic. Keep commits focused. Commit directly to `main`; do not create pull requests. Use Conventional Commits without task IDs or PR numbers in subjects or bodies. Public API comments use YARD's `@api public` tag. Avoid loading optional testing libraries in production.
 
 Scaffold every new gem with `bundle gem NAME`. Before its first publication, stop and ask the project owner to perform the initial release and configure Trusted Publishing.
 

@@ -73,6 +73,24 @@ RSpec.describe Gritz::Supervisor::Launcher do
     expect(File.exist?(@pid_path)).to be false
   end
 
+  it "owns one inherited socket across fresh master generations" do
+    configure(listener_strategy: "inherited_fd", bind: "127.0.0.1:0")
+    first = start
+    port = first[:workers].first[:port]
+    expect(port).to be > 0
+    configure(version: "two", listener_strategy: "inherited_fd", bind: "127.0.0.1:0")
+    Process.kill("USR2", Process.pid)
+    second = wait_status { |row| row[:pid] != first[:pid] && row[:workers].all? { |worker| worker[:version] == "two" } }
+    expect(second[:workers].first[:port]).to eq(port)
+    Process.kill("TERM", Process.pid)
+    expect(@thread.join(3)).not_to be_nil
+    expect(@thread.value).to eq(0)
+    rebound = TCPServer.new("127.0.0.1", port)
+    expect(rebound.addr[1]).to eq(port)
+  ensure
+    rebound&.close
+  end
+
   %w[fail hang].each do |mode|
     it "retains the serving generation and PID when its replacement #{mode}s" do
       configure
@@ -91,6 +109,14 @@ RSpec.describe Gritz::Supervisor::Launcher do
     configure(mode: "fail")
     expect(@launcher.run).to eq(1)
     expect(File.exist?(@pid_path)).to be false
+  end
+
+  it "rejects an invalid listener strategy from a master before opening its listener" do
+    configure(listener_strategy: "invalid")
+    @thread = Thread.new { @launcher.run }
+    expect(@thread.join(3)).not_to be_nil
+    expect(@thread.value).to eq(1)
+    expect(@log.string).to include("listener_strategy")
   end
 
   it "exposes an initially booted unhealthy worker and keeps HTTP readiness false" do

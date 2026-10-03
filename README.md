@@ -6,9 +6,11 @@ Transport-independent controllers, routing, middleware, configuration, forked-wo
 require "gritz/core"
 ```
 
-Use [gritz](https://github.com/gritzrpc/gritz) for the default framework and executable, or combine this gem with [gritz-native](https://github.com/gritzrpc/gritz-native) for the official grpc gem adapter. The Fiber adapter `gritz-async` is planned.
+Use [gritz](https://github.com/gritzrpc/gritz) for the default framework and executable, or combine this gem with [gritz-native](https://github.com/gritzrpc/gritz-native) for the official grpc gem adapter. The experimental [gritz-async](https://github.com/gritzrpc/gritz-async) adapter runs RPCs in fibers and supports inherited TCP listeners without installing the official grpc gem.
 
 Controller tests can load `gritz/testing/rspec` or `gritz/testing/minitest` and run without a network or the grpc gem. See the [controller examples](https://github.com/gritzrpc/gritz#controllers) and [configuration guide](docs/guides/configuration.md).
+
+`Gritz::Testing::Server` selects the configured adapter for real-socket tests; require that adapter's entrypoint first. Adapter suites explicitly require `gritz/testing/transport_contract` to run shared wire checks with RSpec, the official grpc client and googleapis-common-protos-types as test dependencies. Production eager loading skips this shared test suite.
 
 Supervised servers support phased replacement, fresh-interpreter hot reexec, request/memory/lifetime recycling, Admin HTTP probes and process-wide Prometheus totals. The CLI keeps one lifecycle owner across master generations; application controllers and gRPC resources stay in serving processes.
 

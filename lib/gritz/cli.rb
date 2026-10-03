@@ -16,7 +16,8 @@ module Gritz
     RUBY
 
     def self.child_command(argv)
-      [RbConfig.ruby, "-I", $LOAD_PATH.join(File::PATH_SEPARATOR), "-rgritz/core", "-e", CHILD_BOOTSTRAP, "--", *argv]
+      library = defined?(Transport::Async) ? "gritz/async" : "gritz/core"
+      [RbConfig.ruby, "-I", $LOAD_PATH.join(File::PATH_SEPARATOR), "-r#{library}", "-e", CHILD_BOOTSTRAP, "--", *argv]
     end
 
     def initialize(stdout: $stdout, stderr: $stderr, env: ENV, status_io: nil, owner_io: nil, launch: false, launch_command: nil)
@@ -63,7 +64,9 @@ module Gritz
 
       path ||= "config/gritz.rb" if File.file?("config/gritz.rb")
       guard = ForkGuard.activate(mode: :record) if command != "routes"
-      require "gritz/native" if command != "routes"
+      if command != "routes" && Gem.loaded_specs.key?("gritz-native") && !defined?(Transport::Async)
+        require "gritz/native"
+      end
       config = Configuration.load(path: path, env: @env, overrides: overrides)
       if command == "check"
         config.preload! if config.preload_app?
@@ -71,10 +74,12 @@ module Gritz
         return 1 unless guard.violations.empty?
 
         config.validate_runtime!
+        require "gritz/#{config.transport}"
         Router.new(controllers: config.controllers, strict: config.strict_routes, logger: logger)
         @stdout.puts "Configuration and fork safety checks passed"
       elsif command == "start"
         config.validate_runtime!
+        require "gritz/#{config.transport}"
         if config.workers.positive? && config.fork_mode == :clean
           raise guard.violations.first if config.fork_guard == :raise && !guard.violations.empty?
 
@@ -83,14 +88,27 @@ module Gritz
         @stdout.sync = true if @stdout.respond_to?(:sync=)
         @owner_channel&.write(type: "configured", pid: Process.pid, workers: config.workers, bind: config.bind,
                               admin_bind: config.admin_bind, min_ready_workers: config.min_ready_workers, pid_file: config.pid_file,
-                              reexec_timeout: config.reexec_timeout, drain_delay: config.drain_delay, shutdown_timeout: config.shutdown_timeout)
+                              reexec_timeout: config.reexec_timeout, drain_delay: config.drain_delay, shutdown_timeout: config.shutdown_timeout,
+                              listener_strategy: config.listener_strategy.to_s)
+        if @owner_channel && config.listener_strategy == :inherited_fd
+          until @owner_channel.flush
+            raise ConfigurationError, "listener owner closed its control channel" if @owner_channel.closed?
+
+            @owner_channel.io.wait_writable(0.01)
+          end
+          begin
+            listener = @owner_channel.io.recv_io(Socket)
+          rescue IOError, SocketError => e
+            raise ConfigurationError, "listener owner failed to pass its socket: #{e.message}"
+          end
+        end
         if config.workers.positive?
-          return Supervisor::Master.new(config, logger: logger, status_io: @status_io, owner_channel: @owner_channel).run
+          return Supervisor::Master.new(config, logger: logger, status_io: @status_io, owner_channel: @owner_channel, listener:).run
         end
 
         ForkGuard.deactivate
         config.preload! if config.preload_app?
-        return Worker::Runner.new(index: 0, config: config, logger: logger, owner_channel: @owner_channel).run
+        return Worker::Runner.new(index: 0, config: config, logger: logger, owner_channel: @owner_channel, listener:).run
       else
         config.preload! if config.preload_app?
         router = Router.new(controllers: config.controllers, strict: config.strict_routes, logger: logger)
@@ -107,6 +125,7 @@ module Gritz
     ensure
       ForkGuard.deactivate if guard
       @owner_channel&.close
+      listener&.close unless listener&.closed?
     end
   end
 end

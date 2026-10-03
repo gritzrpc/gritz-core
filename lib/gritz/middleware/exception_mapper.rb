@@ -27,6 +27,8 @@ module Gritz
         end
 
         case e.class.name
+        when "Async::GRPC::DeadlineExceededError"
+          raise Errors::DeadlineExceeded, "deadline exceeded"
         when "ActiveRecord::RecordNotFound"
           raise Errors::NotFound, "record not found"
         when "ActiveRecord::RecordInvalid"
